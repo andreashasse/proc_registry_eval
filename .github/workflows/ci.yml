@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    name: OTP ${{ matrix.otp }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        otp: ["28", "27"]
+        rebar3: ["3.27"]
+        include:
+          # ELP (used by the type_check and lint steps) ships per-OTP builds.
+          - otp: "28"
+            elp_build: "https://github.com/WhatsApp/erlang-language-platform/releases/download/2026-08-07/elp-linux-x86_64-unknown-linux-gnu-otp-28.5.tar.gz"
+          - otp: "27"
+            elp_build: "https://github.com/WhatsApp/erlang-language-platform/releases/download/2026-08-07/elp-linux-x86_64-unknown-linux-gnu-otp-27.3.tar.gz"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Erlang/OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp }}
+          rebar3-version: ${{ matrix.rebar3 }}
+
+      - name: Setup ELP
+        if: matrix.elp_build
+        run: |
+          mkdir -p bin
+          wget -q ${{ matrix.elp_build }} -O elp.tar.gz
+          tar -xzf elp.tar.gz
+          mv elp bin/
+          echo "${{ github.workspace }}/bin" >> $GITHUB_PATH
+
+      - name: Cache rebar3 dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/rebar3
+            _build
+          key: ${{ runner.os }}-rebar3-${{ matrix.otp }}-${{ hashFiles('rebar.config') }}
+          restore-keys: |
+            ${{ runner.os }}-rebar3-${{ matrix.otp }}-
+
+      - name: Compile
+        run: make compile
+
+      - name: Xref
+        run: make xref
+
+      - name: Type check
+        if: matrix.elp_build
+        run: make type_check
+
+      - name: Test
+        run: make test
+
+      - name: Dialyzer
+        run: make dialyzer
+
+      - name: Lint
+        if: matrix.elp_build
+        run: make lint
+
+      - name: Dead code
+        run: make hank
+
+      - name: Check format
+        run: make format_verify
+
+      - name: Coverage
+        run: make cover
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-otp-${{ matrix.otp }}
+          path: _build/test/cover/
+          retention-days: 30
+
+  shellcheck:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck run.sh docker/entrypoint.sh
+
+  cluster:
+    name: Docker cluster smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Runs the real thing: three containers, iptables partitions, every
+      # scenario. One registry only, to keep CI under a few minutes.
+      - name: Run the workbench against global
+        run: SETTLE_MS=8000 ./run.sh global
+
+      - name: Show the report
+        run: cat results/RESULTS.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbench-results
+          path: results/
+          retention-days: 30

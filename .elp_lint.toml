@@ -1,0 +1,4 @@
+# W0014 forbids cross node eval. Driving other nodes over rpc is what the
+# controller does, so the rule would be one long list of exceptions.
+[linters.W0014]
+enabled = false

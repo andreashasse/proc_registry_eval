@@ -1,0 +1,18 @@
+{"1.2.0",
+[{<<"gen_leader">>,{pkg,<<"gen_leader">>,<<"0.1.0">>},0},
+ {<<"gproc">>,{pkg,<<"gproc">>,<<"1.3.0">>},0},
+ {<<"locker">>,
+  {git,"https://github.com/wooga/locker.git",
+       {ref,"cf92412b95fd429066a8c511c0049447a10d58fa"}},
+  0},
+ {<<"syn">>,{pkg,<<"syn">>,<<"3.4.2">>},0}]}.
+[
+{pkg_hash,[
+ {<<"gen_leader">>, <<"4EFF42117A135191A4CBEEB3DC8F7A288197A3BA19D29FAD21EB301B62891A62">>},
+ {<<"gproc">>, <<"60BC1DF3C4E09FC15B74FE3325ECFC590B6D2B8CDCB3104AE1FA0689F6F1260E">>},
+ {<<"syn">>, <<"6EA6F318F5C04B995D252023F9C943057F461839FC4ABFBE41BAE594119A0D66">>}]},
+{pkg_hash_ext,[
+ {<<"gen_leader">>, <<"31340F49935767F12B639B69CDC585F26EBCC1802BA46B33555B229DA2366207">>},
+ {<<"gproc">>, <<"143A8CE6EB59610A351178482B629D2B052C69DF84C9C50B9C13AE38354C8C14">>},
+ {<<"syn">>, <<"7B6967C80E16422255EBF3A362CAFCCCD55A1DFF20C9EB94F4CD4DDB086452A0">>}]}
+].

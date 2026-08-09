@@ -1,0 +1,12 @@
+{application, workbench, [
+    {description, "Workbench for evaluating distributed process registries"},
+    {vsn, "1.0.0"},
+    {registered, []},
+    {mod, {workbench_app, []}},
+    %% Deliberately minimal: the registry under test is started by
+    %% registry:setup/1 before this application boots, so a run never has
+    %% two registries loaded at the same time.
+    {applications, [kernel, stdlib]},
+    {env, []},
+    {licenses, ["MIT"]}
+]}.

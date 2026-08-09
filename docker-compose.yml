@@ -1,0 +1,45 @@
+name: proc-registry-eval
+
+# All three cluster nodes are identical apart from their hostname.
+x-node: &node
+  build: .
+  image: proc-registry-eval:latest
+  # iptables needs NET_ADMIN to cut the network between the nodes.
+  cap_add: ["NET_ADMIN"]
+  environment: &settings
+    REGISTRY: ${REGISTRY:-global}
+    PEERS: node1,node2,node3
+    SETTLE_MS: ${SETTLE_MS:-15000}
+    LEASE_MS: ${LEASE_MS:-60000}
+    ACTION_TIMEOUT_MS: ${ACTION_TIMEOUT_MS:-20000}
+  command: ["node"]
+  networks: ["cluster"]
+
+services:
+  node1:
+    <<: *node
+    hostname: node1
+
+  node2:
+    <<: *node
+    hostname: node2
+
+  node3:
+    <<: *node
+    hostname: node3
+
+  # Started with `docker compose run`, never with `up`: it drives the
+  # scenarios and then exits.
+  controller:
+    build: .
+    image: proc-registry-eval:latest
+    hostname: controller
+    environment: *settings
+    command: ["scenarios"]
+    networks: ["cluster"]
+    volumes:
+      - ./results:/app/results
+
+networks:
+  cluster:
+    driver: bridge
