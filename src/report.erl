@@ -71,7 +71,7 @@ environment_section(Runs) ->
 
 -spec environment_rows([run()]) -> [[cell()]].
 environment_rows(Runs) ->
-    Settings = [Setting || {Setting, _Value} <- environment(hd(Runs))],
+    Settings = unique([Setting || Run <- Runs, {Setting, _Value} <- environment(Run)]),
     Started = [<<"run started">> | [fmt:text(maps:get(started_at, Run)) || Run <- Runs]],
     [
         Started
@@ -97,7 +97,10 @@ summary_section(Runs) ->
             <<"the name and compares the answers. `agree n/m` counts how many ">>,
             <<"of those checks got the same answer from every node. `owners` is ">>,
             <<"the highest number of different owners seen at the same time, so ">>,
-            <<"more than one means the cluster had a split brain.">>
+            <<"more than one means the cluster had a split brain. `refused` ">>,
+            <<"counts the actions the registry answered `{error, Reason}` to, ">>,
+            <<"such as a second claim on a name that is already owned; ">>,
+            <<"`timed out` counts the ones it did not answer at all.">>
         ]),
         table(header(<<"Scenario">>, Runs), summary_rows(Runs))
     ].

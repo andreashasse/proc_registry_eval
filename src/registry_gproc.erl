@@ -6,7 +6,7 @@
 -module(registry_gproc).
 -behaviour(registry).
 
--export([setup/1, child_specs/0, on_cluster_ready/1]).
+-export([setup/1, child_specs/0, on_cluster_ready/1, settings/0, application/0]).
 -export([register_name/2, whereis_name/1, unregister_name/1, renew_lease/2]).
 
 -spec setup([node()]) -> ok.
@@ -27,6 +27,14 @@ on_cluster_ready(_Peers) ->
 
 %% gproc signals a name that is already taken by raising `badarg', the same
 %% way it signals a malformed key, so the reason is passed through as is.
+-spec application() -> atom().
+application() ->
+    gproc.
+
+-spec settings() -> [{binary(), binary()}].
+settings() ->
+    [].
+
 -spec register_name(workbench:key(), pid()) -> ok | {error, term()}.
 register_name(Key, Pid) ->
     try gproc:reg_other({n, g, Key}, Pid) of

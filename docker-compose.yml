@@ -12,6 +12,8 @@ x-node: &node
     SETTLE_MS: ${SETTLE_MS:-15000}
     LEASE_MS: ${LEASE_MS:-60000}
     ACTION_TIMEOUT_MS: ${ACTION_TIMEOUT_MS:-20000}
+    # Each phase of a locker write waits this long for the masters.
+    LOCKER_TIMEOUT_MS: ${LOCKER_TIMEOUT_MS:-5000}
   command: ["node"]
   networks: ["cluster"]
 

@@ -6,7 +6,7 @@
 -module(workbench).
 
 -export([boot/0]).
--export([registry/0, peers/0, settle_ms/0, action_timeout_ms/0]).
+-export([registry/0, peers/0, settle_ms/0, action_timeout_ms/0, env/2]).
 -export([lease_ms/0, set_lease_ms/1, reset_lease_ms/0]).
 -export([node_of/1, node_ids/0]).
 -export([describe/1]).
@@ -115,6 +115,9 @@ default_lease_ms() ->
 action_timeout_ms() ->
     list_to_integer(env("ACTION_TIMEOUT_MS", "20000")).
 
+%% Configuration is read straight from the environment, so docker-compose.yml
+%% is the only place to look.
+-spec env(string(), string()) -> string().
 env(Name, Default) ->
     case os:getenv(Name) of
         false -> Default;

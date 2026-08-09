@@ -251,24 +251,31 @@ environment([Node | _]) ->
         {<<"settle after network change">>, fmt:text(workbench:settle_ms())},
         {<<"default lease">>, fmt:text(workbench:lease_ms())},
         {<<"action timeout">>, fmt:text(workbench:action_timeout_ms())}
-    ].
+    ] ++ registry_settings(Node).
+
+%% Whatever the registry itself thinks is worth knowing, asked on a node so
+%% that it reflects the cluster and not the controller.
+-spec registry_settings(node()) -> [{binary(), binary()}].
+registry_settings(Node) ->
+    case rpc:call(Node, registry, settings, []) of
+        Settings when is_list(Settings) ->
+            [
+                {Name, Value}
+             || {Name, Value} <- Settings, is_binary(Name), is_binary(Value)
+            ];
+        _Unavailable ->
+            []
+    end.
 
 -spec registry_version(node()) -> binary().
 registry_version(Node) ->
-    Application = registry_application(),
+    Application = rpc:call(Node, registry, application, []),
     %% locker is used as a library and never started, so its application
     %% has to be loaded before it can be asked for a version.
     _ = rpc:call(Node, application, load, [Application]),
     case rpc:call(Node, application, get_key, [Application, vsn]) of
         {ok, Vsn} -> fmt:format("~s ~s", [Application, Vsn]);
         _Missing -> fmt:text(Application)
-    end.
-
--spec registry_application() -> atom().
-registry_application() ->
-    case workbench:registry() of
-        global -> kernel;
-        Other -> Other
     end.
 
 -spec timestamp() -> binary().

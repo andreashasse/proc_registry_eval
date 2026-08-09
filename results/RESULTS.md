@@ -2,45 +2,49 @@
 
 A three node Erlang cluster in docker. The network between the nodes is cut and healed with iptables while a fixed list of actions is run against each registry, and every answer every node gives is written down.
 
-Registries in this run: global, gproc, syn, locker. Produced by `./run.sh`; nothing in this file is written by hand.
+Registries in this run: global, gproc, syn, locker, locker_replica, locker_master. Produced by `./run.sh`; nothing in this file is written by hand.
 
 ## Environment
 
-| Setting | global | gproc | syn | locker |
-| --- | --- | --- | --- | --- |
-| run started | 2026-08-09T21:23:39Z | 2026-08-09T21:26:25Z | 2026-08-09T21:29:03Z | 2026-08-09T21:36:52Z |
-| OTP release | 27 | 27 | 27 | 27 |
-| net_ticktime | 5 | 5 | 5 | 5 |
-| kernel prevent_overlapping_partitions | true | true | true | true |
-| registry version | kernel 10.2.7.4 | gproc 1.3.0 | syn 3.4.2 | locker 6 |
-| settle after network change | 15000 | 15000 | 15000 | 15000 |
-| default lease | 60000 | 60000 | 60000 | 60000 |
-| action timeout | 20000 | 20000 | 20000 | 20000 |
+| Setting | global | gproc | syn | locker | locker_replica | locker_master |
+| --- | --- | --- | --- | --- | --- | --- |
+| run started | 2026-08-09T21:23:39Z | 2026-08-09T21:26:25Z | 2026-08-09T21:29:03Z | 2026-08-09T22:01:52Z | 2026-08-09T22:29:30Z | 2026-08-09T22:33:34Z |
+| OTP release | 27 | 27 | 27 | 27 | 27 | 27 |
+| net_ticktime | 5 | 5 | 5 | 5 | 5 | 5 |
+| kernel prevent_overlapping_partitions | true | true | true | true | true | true |
+| registry version | kernel 10.2.7.4 | gproc 1.3.0 | syn 3.4.2 | locker 6 | locker 6 | locker 6 |
+| settle after network change | 15000 | 15000 | 15000 | 15000 | 15000 | 15000 |
+| default lease | 60000 | 60000 | 60000 | 60000 | 60000 | 60000 |
+| action timeout | 20000 | 20000 | 20000 | 20000 | 20000 | 20000 |
+| locker write quorum | - | - | - | 2 of 3 masters | 2 of 2 masters | 2 of 2 masters |
+| locker replicas | - | - | - | 0 | 1 | 1 |
+| locker read | - | - | - | dirty_read, local ets | dirty_read, local ets | master_dirty_read |
+| locker call timeout | - | - | - | 5000ms | 5000ms | 5000ms |
 
 ## Summary
 
-Every `lookup on all nodes` step asks all three nodes who owns the name and compares the answers. `agree n/m` counts how many of those checks got the same answer from every node. `owners` is the highest number of different owners seen at the same time, so more than one means the cluster had a split brain.
+Every `lookup on all nodes` step asks all three nodes who owns the name and compares the answers. `agree n/m` counts how many of those checks got the same answer from every node. `owners` is the highest number of different owners seen at the same time, so more than one means the cluster had a split brain. `refused` counts the actions the registry answered `{error, Reason}` to, such as a second claim on a name that is already owned; `timed out` counts the ones it did not answer at all.
 
-| Scenario | global | gproc | syn | locker |
-| --- | --- | --- | --- | --- |
-| baseline | agree 3/3, 1 owner, 1 refused | agree 3/3, 1 owner, 1 refused | agree 3/3, 1 owner, 1 refused | agree 3/3, 1 owner, 1 refused |
-| process death | agree 3/3, 1 owner | agree 3/3, 1 owner | agree 3/3, 1 owner | agree 3/3, 1 owner, 1 refused |
-| lease expiry | agree 3/3, 1 owner, 1 refused | agree 3/3, 1 owner, 1 refused | agree 3/3, 1 owner, 1 refused | agree 3/3, 1 owner |
-| symmetric split | agree 2/4, 2 owners | agree 2/4, 2 owners | agree 2/4, 2 owners | agree 4/4, 1 owner, 1 refused |
-| owner isolated | agree 2/4, 2 owners | agree 2/4, 2 owners | agree 2/4, 2 owners | agree 4/4, 1 owner, 1 refused |
-| one sided split | agree 2/4, 2 owners | agree 1/4, 2 owners | agree 2/4, 2 owners | agree 4/4, 1 owner, 1 refused |
-| full split | agree 2/4, 3 owners | agree 2/4, 3 owners | agree 2/4, 3 owners | agree 4/4, 1 owner, 2 refused |
+| Scenario | global | gproc | syn | locker | locker_replica | locker_master |
+| --- | --- | --- | --- | --- | --- | --- |
+| baseline | agree 3/3, 1 owner, 1 refused | agree 3/3, 1 owner, 1 refused | agree 3/3, 1 owner, 1 refused | agree 3/3, 1 owner, 1 refused | agree 1/3, 1 owner, 1 refused | agree 3/3, 1 owner, 1 refused |
+| process death | agree 3/3, 1 owner | agree 3/3, 1 owner | agree 3/3, 1 owner | agree 3/3, 1 owner, 1 refused | agree 2/3, 1 owner, 1 refused | agree 3/3, 1 owner, 1 refused |
+| lease expiry | agree 3/3, 1 owner, 1 refused | agree 3/3, 1 owner, 1 refused | agree 3/3, 1 owner, 1 refused | agree 3/3, 1 owner | agree 1/3, 1 owner | agree 3/3, 1 owner |
+| symmetric split | agree 2/4, 2 owners | agree 2/4, 2 owners | agree 2/4, 2 owners | agree 4/4, 1 owner, 1 refused | agree 1/4, 1 owner, 1 refused | agree 2/4, 1 owner, 1 refused, 2 timed out |
+| owner isolated | agree 2/4, 2 owners | agree 2/4, 2 owners | agree 2/4, 2 owners | agree 4/4, 1 owner, 1 refused | agree 0/4, 1 owner, 1 refused | agree 2/4, 1 owner, 1 refused, 2 timed out |
+| one sided split | agree 2/4, 2 owners | agree 1/4, 2 owners | agree 2/4, 2 owners | agree 4/4, 1 owner, 1 refused | agree 3/4, 1 owner, 1 refused | agree 2/4, 1 owner, 1 refused, 2 timed out |
+| full split | agree 2/4, 3 owners | agree 2/4, 3 owners | agree 2/4, 3 owners | agree 4/4, 1 owner, 2 refused | agree 3/4, 1 owner, 2 refused | agree 2/4, 1 owner, 2 refused, 2 timed out |
 
 ## Observations
 
-| Question | global | gproc | syn | locker |
-| --- | --- | --- | --- | --- |
-| Are leases supported? | no | no | no | yes |
-| Slowest single action | 8ms | 4469ms | 8ms | 7014ms |
-| Claims the registry refused | 2 | 2 | 2 | 7 |
-| Actions that timed out or crashed | 0 | 0 | 0 | 0 |
-| Checks where the nodes disagreed | 8 | 9 | 8 | 0 |
-| Highest number of owners at the same time | 3 | 3 | 3 | 1 |
+| Question | global | gproc | syn | locker | locker_replica | locker_master |
+| --- | --- | --- | --- | --- | --- | --- |
+| Are leases supported? | no | no | no | yes | yes | yes |
+| Slowest single action | 8ms | 4469ms | 8ms | 7012ms | 7006ms | 7016ms |
+| Claims the registry refused | 2 | 2 | 2 | 7 | 7 | 7 |
+| Actions that timed out or crashed | 0 | 0 | 0 | 0 | 0 | 8 |
+| Checks where the nodes disagreed | 8 | 9 | 8 | 0 | 14 | 8 |
+| Highest number of owners at the same time | 3 | 3 | 3 | 1 | 1 | 1 |
 
 ## Actions
 
@@ -446,11 +450,11 @@ Healthy cluster. Establishes what the registry does when nothing is wrong: a nam
 
 | # | Step | n1 | n2 | n3 |
 | --- | --- | --- | --- | --- |
-| 1 | `start_process` on n1 (baseline/service) | started `node1/5a14b8` |  |  |
-| 2 | `lookup` on all nodes (baseline/service) - **agree** | `node1/5a14b8` | `node1/5a14b8` | `node1/5a14b8` |
+| 1 | `start_process` on n1 (baseline/service) | started `node1/594245` |  |  |
+| 2 | `lookup` on all nodes (baseline/service) - **agree** | `node1/594245` | `node1/594245` | `node1/594245` |
 | 3 | _A second node claims the same name._ |  |  |  |
 | 4 | `start_process` on n2 (baseline/service) |  | error: `no_quorum` |  |
-| 5 | `lookup` on all nodes (baseline/service) - **agree** | `node1/5a14b8` | `node1/5a14b8` | `node1/5a14b8` |
+| 5 | `lookup` on all nodes (baseline/service) - **agree** | `node1/594245` | `node1/594245` | `node1/594245` |
 | 6 | `renew_lease` on n2 (baseline/service) |  | `renewed` |  |
 | 7 | `stop_process` on n1 (baseline/service) | `stopped` |  |  |
 | 8 | `lookup` on all nodes (baseline/service) - **agree** | `not_found` | `not_found` | `not_found` |
@@ -461,14 +465,14 @@ The registered process is killed without unregistering. Shows whether the regist
 
 | # | Step | n1 | n2 | n3 |
 | --- | --- | --- | --- | --- |
-| 1 | `start_process` on n1 (process_death/service) | started `node1/e7d158` |  |  |
-| 2 | `lookup` on all nodes (process_death/service) - **agree** | `node1/e7d158` | `node1/e7d158` | `node1/e7d158` |
+| 1 | `start_process` on n1 (process_death/service) | started `node1/d70750` |  |  |
+| 2 | `lookup` on all nodes (process_death/service) - **agree** | `node1/d70750` | `node1/d70750` | `node1/d70750` |
 | 3 | `kill_process` on n1 (process_death/service) | `killed` |  |  |
 | 4 | wait 2000ms |  |  |  |
-| 5 | `lookup` on all nodes (process_death/service) - **agree** | `node1/e7d158` | `node1/e7d158` | `node1/e7d158` |
+| 5 | `lookup` on all nodes (process_death/service) - **agree** | `node1/d70750` | `node1/d70750` | `node1/d70750` |
 | 6 | _Another node tries to take the name over._ |  |  |  |
 | 7 | `start_process` on n2 (process_death/service) |  | error: `no_quorum` |  |
-| 8 | `lookup` on all nodes (process_death/service) - **agree** | `node1/e7d158` | `node1/e7d158` | `node1/e7d158` |
+| 8 | `lookup` on all nodes (process_death/service) - **agree** | `node1/d70750` | `node1/d70750` | `node1/d70750` |
 
 #### lease expiry
 
@@ -477,8 +481,264 @@ The lease is shortened to 3s and then nobody renews it. Registries without lease
 | # | Step | n1 | n2 | n3 |
 | --- | --- | --- | --- | --- |
 | 1 | set lease_ms to 3000 |  |  |  |
-| 2 | `start_process` on n1 (lease_expiry/service) | started `node1/8c54d1` |  |  |
-| 3 | `lookup` on all nodes (lease_expiry/service) - **agree** | `node1/8c54d1` | `node1/8c54d1` | `node1/8c54d1` |
+| 2 | `start_process` on n1 (lease_expiry/service) | started `node1/3ab824` |  |  |
+| 3 | `lookup` on all nodes (lease_expiry/service) - **agree** | `node1/3ab824` | `node1/3ab824` | `node1/3ab824` |
+| 4 | `renew_lease` on n1 (lease_expiry/service) | `renewed` |  |  |
+| 5 | _Wait past the lease without renewing._ |  |  |  |
+| 6 | wait 6000ms |  |  |  |
+| 7 | `lookup` on all nodes (lease_expiry/service) - **agree** | `not_found` | `not_found` | `not_found` |
+| 8 | _Another node tries to take the name over._ |  |  |  |
+| 9 | `start_process` on n2 (lease_expiry/service) |  | started `node2/0bc2d0` |  |
+| 10 | `lookup` on all nodes (lease_expiry/service) - **agree** | `node2/0bc2d0` | `node2/0bc2d0` | `node2/0bc2d0` |
+
+#### symmetric split
+
+The cluster splits into a majority (n1, n2) and a minority (n3). The owner is on the majority side. The minority tries to claim the same name, then the split is healed.
+
+| # | Step | n1 | n2 | n3 |
+| --- | --- | --- | --- | --- |
+| 1 | `start_process` on n1 (symmetric_split/service) | started `node1/dad782` |  |  |
+| 2 | `lookup` on all nodes (symmetric_split/service) - **agree** | `node1/dad782` | `node1/dad782` | `node1/dad782` |
+| 3 | **isolate n3** |  |  |  |
+| 4 | wait 15000ms for the registry to react |  |  |  |
+| 5 | `lookup` on all nodes (symmetric_split/service) - **agree** | `node1/dad782` | `node1/dad782` | `node1/dad782` |
+| 6 | _The minority side claims the same name._ |  |  |  |
+| 7 | `start_process` on n3 (symmetric_split/service) |  |  | error: `no_quorum` _(7012ms)_ |
+| 8 | `lookup` on all nodes (symmetric_split/service) - **agree** | `node1/dad782` | `node1/dad782` | `node1/dad782` |
+| 9 | `renew_lease` on n1 (symmetric_split/service) | `renewed` _(7004ms)_ |  |  |
+| 10 | **heal the network** |  |  |  |
+| 11 | wait 15000ms for the registry to react |  |  |  |
+| 12 | _After healing: does the cluster agree again?_ |  |  |  |
+| 13 | `lookup` on all nodes (symmetric_split/service) - **agree** | `node1/dad782` | `node1/dad782` | `node1/dad782` |
+
+#### owner isolated
+
+The node owning the name (n3) is cut off from the majority. This is the failover case: can the majority take the name over, and what happens to the old owner when the split heals?
+
+| # | Step | n1 | n2 | n3 |
+| --- | --- | --- | --- | --- |
+| 1 | `start_process` on n3 (owner_isolated/service) |  |  | started `node3/603f11` |
+| 2 | `lookup` on all nodes (owner_isolated/service) - **agree** | `node3/603f11` | `node3/603f11` | `node3/603f11` |
+| 3 | **isolate n3** |  |  |  |
+| 4 | wait 15000ms for the registry to react |  |  |  |
+| 5 | `lookup` on all nodes (owner_isolated/service) - **agree** | `node3/603f11` | `node3/603f11` | `node3/603f11` |
+| 6 | _The majority side tries to take the name over._ |  |  |  |
+| 7 | `start_process` on n1 (owner_isolated/service) | error: `no_quorum` _(7004ms)_ |  |  |
+| 8 | `lookup` on all nodes (owner_isolated/service) - **agree** | `node3/603f11` | `node3/603f11` | `node3/603f11` |
+| 9 | **heal the network** |  |  |  |
+| 10 | wait 15000ms for the registry to react |  |  |  |
+| 11 | _After healing: one owner, or two?_ |  |  |  |
+| 12 | `lookup` on all nodes (owner_isolated/service) - **agree** | `node3/603f11` | `node3/603f11` | `node3/603f11` |
+
+#### one sided split
+
+n1 stops hearing from n3, but n3 still hears n1. The two nodes disagree about whether the other one is alive, which is the case that breaks membership algorithms assuming symmetric failures.
+
+| # | Step | n1 | n2 | n3 |
+| --- | --- | --- | --- | --- |
+| 1 | `start_process` on n1 (one_sided_split/service) | started `node1/7a7dc0` |  |  |
+| 2 | `lookup` on all nodes (one_sided_split/service) - **agree** | `node1/7a7dc0` | `node1/7a7dc0` | `node1/7a7dc0` |
+| 3 | **cut n1 <- n3** (one sided: n3 still hears n1) |  |  |  |
+| 4 | wait 15000ms for the registry to react |  |  |  |
+| 5 | `lookup` on all nodes (one_sided_split/service) - **agree** | `node1/7a7dc0` | `node1/7a7dc0` | `node1/7a7dc0` |
+| 6 | _n3 claims the same name while it still believes n1 is up._ |  |  |  |
+| 7 | `start_process` on n3 (one_sided_split/service) |  |  | error: `no_quorum` _(7008ms)_ |
+| 8 | `lookup` on all nodes (one_sided_split/service) - **agree** | `node1/7a7dc0` | `node1/7a7dc0` | `node1/7a7dc0` |
+| 9 | **heal the network** |  |  |  |
+| 10 | wait 15000ms for the registry to react |  |  |  |
+| 11 | `lookup` on all nodes (one_sided_split/service) - **agree** | `node1/7a7dc0` | `node1/7a7dc0` | `node1/7a7dc0` |
+
+#### full split
+
+Every node is cut off from every other node, so nobody has a majority. All three then try to own the same name at the same time, and the split is healed with three candidate owners.
+
+| # | Step | n1 | n2 | n3 |
+| --- | --- | --- | --- | --- |
+| 1 | `start_process` on n1 (full_split/service) | started `node1/2cf4e2` |  |  |
+| 2 | `lookup` on all nodes (full_split/service) - **agree** | `node1/2cf4e2` | `node1/2cf4e2` | `node1/2cf4e2` |
+| 3 | **cut n1 <-> n2** |  |  |  |
+| 4 | **cut n1 <-> n3** |  |  |  |
+| 5 | **cut n2 <-> n3** |  |  |  |
+| 6 | wait 15000ms for the registry to react |  |  |  |
+| 7 | `lookup` on all nodes (full_split/service) - **agree** | `node1/2cf4e2` | `node1/2cf4e2` | `node1/2cf4e2` |
+| 8 | _Both other nodes claim the name as well._ |  |  |  |
+| 9 | `start_process` on n2 (full_split/service) |  | error: `no_quorum` _(7004ms)_ |  |
+| 10 | `start_process` on n3 (full_split/service) |  |  | error: `no_quorum` _(7003ms)_ |
+| 11 | `lookup` on all nodes (full_split/service) - **agree** | `node1/2cf4e2` | `node1/2cf4e2` | `node1/2cf4e2` |
+| 12 | **heal the network** |  |  |  |
+| 13 | wait 15000ms for the registry to react |  |  |  |
+| 14 | _After healing: how many owners survive?_ |  |  |  |
+| 15 | `lookup` on all nodes (full_split/service) - **agree** | `node1/2cf4e2` | `node1/2cf4e2` | `node1/2cf4e2` |
+
+### locker_replica
+
+#### baseline
+
+Healthy cluster. Establishes what the registry does when nothing is wrong: a name is visible everywhere, a second claim is refused, and the name is free again after an orderly stop.
+
+| # | Step | n1 | n2 | n3 |
+| --- | --- | --- | --- | --- |
+| 1 | `start_process` on n1 (baseline/service) | started `node1/7698bf` |  |  |
+| 2 | `lookup` on all nodes (baseline/service) - **disagree** | `node1/7698bf` | `node1/7698bf` | `not_found` |
+| 3 | _A second node claims the same name._ |  |  |  |
+| 4 | `start_process` on n2 (baseline/service) |  | error: `no_quorum` |  |
+| 5 | `lookup` on all nodes (baseline/service) - **disagree** | `node1/7698bf` | `node1/7698bf` | `not_found` |
+| 6 | `renew_lease` on n2 (baseline/service) |  | `renewed` |  |
+| 7 | `stop_process` on n1 (baseline/service) | `stopped` |  |  |
+| 8 | `lookup` on all nodes (baseline/service) - **agree** | `not_found` | `not_found` | `not_found` |
+
+#### process death
+
+The registered process is killed without unregistering. Shows whether the registry monitors the process and frees the name by itself, or keeps handing out a dead pid.
+
+| # | Step | n1 | n2 | n3 |
+| --- | --- | --- | --- | --- |
+| 1 | `start_process` on n1 (process_death/service) | started `node1/c0a1eb` |  |  |
+| 2 | `lookup` on all nodes (process_death/service) - **disagree** | `node1/c0a1eb` | `node1/c0a1eb` | `not_found` |
+| 3 | `kill_process` on n1 (process_death/service) | `killed` |  |  |
+| 4 | wait 2000ms |  |  |  |
+| 5 | `lookup` on all nodes (process_death/service) - **agree** | `node1/c0a1eb` | `node1/c0a1eb` | `node1/c0a1eb` |
+| 6 | _Another node tries to take the name over._ |  |  |  |
+| 7 | `start_process` on n2 (process_death/service) |  | error: `no_quorum` |  |
+| 8 | `lookup` on all nodes (process_death/service) - **agree** | `node1/c0a1eb` | `node1/c0a1eb` | `node1/c0a1eb` |
+
+#### lease expiry
+
+The lease is shortened to 3s and then nobody renews it. Registries without leases keep the name forever; a lease based registry drops it and lets another node take over.
+
+| # | Step | n1 | n2 | n3 |
+| --- | --- | --- | --- | --- |
+| 1 | set lease_ms to 3000 |  |  |  |
+| 2 | `start_process` on n1 (lease_expiry/service) | started `node1/93b9b1` |  |  |
+| 3 | `lookup` on all nodes (lease_expiry/service) - **disagree** | `node1/93b9b1` | `node1/93b9b1` | `not_found` |
+| 4 | `renew_lease` on n1 (lease_expiry/service) | `renewed` |  |  |
+| 5 | _Wait past the lease without renewing._ |  |  |  |
+| 6 | wait 6000ms |  |  |  |
+| 7 | `lookup` on all nodes (lease_expiry/service) - **agree** | `not_found` | `not_found` | `not_found` |
+| 8 | _Another node tries to take the name over._ |  |  |  |
+| 9 | `start_process` on n2 (lease_expiry/service) |  | started `node2/3fe4ba` |  |
+| 10 | `lookup` on all nodes (lease_expiry/service) - **disagree** | `node2/3fe4ba` | `node2/3fe4ba` | `not_found` |
+
+#### symmetric split
+
+The cluster splits into a majority (n1, n2) and a minority (n3). The owner is on the majority side. The minority tries to claim the same name, then the split is healed.
+
+| # | Step | n1 | n2 | n3 |
+| --- | --- | --- | --- | --- |
+| 1 | `start_process` on n1 (symmetric_split/service) | started `node1/b9d9b1` |  |  |
+| 2 | `lookup` on all nodes (symmetric_split/service) - **disagree** | `node1/b9d9b1` | `node1/b9d9b1` | `not_found` |
+| 3 | **isolate n3** |  |  |  |
+| 4 | wait 15000ms for the registry to react |  |  |  |
+| 5 | `lookup` on all nodes (symmetric_split/service) - **disagree** | `node1/b9d9b1` | `node1/b9d9b1` | `not_found` |
+| 6 | _The minority side claims the same name._ |  |  |  |
+| 7 | `start_process` on n3 (symmetric_split/service) |  |  | error: `no_quorum` _(7006ms)_ |
+| 8 | `lookup` on all nodes (symmetric_split/service) - **disagree** | `node1/b9d9b1` | `node1/b9d9b1` | `not_found` |
+| 9 | `renew_lease` on n1 (symmetric_split/service) | `renewed` |  |  |
+| 10 | **heal the network** |  |  |  |
+| 11 | wait 15000ms for the registry to react |  |  |  |
+| 12 | _After healing: does the cluster agree again?_ |  |  |  |
+| 13 | `lookup` on all nodes (symmetric_split/service) - **agree** | `node1/b9d9b1` | `node1/b9d9b1` | `node1/b9d9b1` |
+
+#### owner isolated
+
+The node owning the name (n3) is cut off from the majority. This is the failover case: can the majority take the name over, and what happens to the old owner when the split heals?
+
+| # | Step | n1 | n2 | n3 |
+| --- | --- | --- | --- | --- |
+| 1 | `start_process` on n3 (owner_isolated/service) |  |  | started `node3/0818cc` |
+| 2 | `lookup` on all nodes (owner_isolated/service) - **disagree** | `node3/0818cc` | `node3/0818cc` | `not_found` |
+| 3 | **isolate n3** |  |  |  |
+| 4 | wait 15000ms for the registry to react |  |  |  |
+| 5 | `lookup` on all nodes (owner_isolated/service) - **disagree** | `node3/0818cc` | `node3/0818cc` | `not_found` |
+| 6 | _The majority side tries to take the name over._ |  |  |  |
+| 7 | `start_process` on n1 (owner_isolated/service) | error: `no_quorum` |  |  |
+| 8 | `lookup` on all nodes (owner_isolated/service) - **disagree** | `node3/0818cc` | `node3/0818cc` | `not_found` |
+| 9 | **heal the network** |  |  |  |
+| 10 | wait 15000ms for the registry to react |  |  |  |
+| 11 | _After healing: one owner, or two?_ |  |  |  |
+| 12 | `lookup` on all nodes (owner_isolated/service) - **disagree** | `node3/0818cc` | `node3/0818cc` | `not_found` |
+
+#### one sided split
+
+n1 stops hearing from n3, but n3 still hears n1. The two nodes disagree about whether the other one is alive, which is the case that breaks membership algorithms assuming symmetric failures.
+
+| # | Step | n1 | n2 | n3 |
+| --- | --- | --- | --- | --- |
+| 1 | `start_process` on n1 (one_sided_split/service) | started `node1/6de709` |  |  |
+| 2 | `lookup` on all nodes (one_sided_split/service) - **disagree** | `node1/6de709` | `node1/6de709` | `not_found` |
+| 3 | **cut n1 <- n3** (one sided: n3 still hears n1) |  |  |  |
+| 4 | wait 15000ms for the registry to react |  |  |  |
+| 5 | `lookup` on all nodes (one_sided_split/service) - **agree** | `node1/6de709` | `node1/6de709` | `node1/6de709` |
+| 6 | _n3 claims the same name while it still believes n1 is up._ |  |  |  |
+| 7 | `start_process` on n3 (one_sided_split/service) |  |  | error: `no_quorum` _(5180ms)_ |
+| 8 | `lookup` on all nodes (one_sided_split/service) - **agree** | `node1/6de709` | `node1/6de709` | `node1/6de709` |
+| 9 | **heal the network** |  |  |  |
+| 10 | wait 15000ms for the registry to react |  |  |  |
+| 11 | `lookup` on all nodes (one_sided_split/service) - **agree** | `node1/6de709` | `node1/6de709` | `node1/6de709` |
+
+#### full split
+
+Every node is cut off from every other node, so nobody has a majority. All three then try to own the same name at the same time, and the split is healed with three candidate owners.
+
+| # | Step | n1 | n2 | n3 |
+| --- | --- | --- | --- | --- |
+| 1 | `start_process` on n1 (full_split/service) | started `node1/4b7749` |  |  |
+| 2 | `lookup` on all nodes (full_split/service) - **disagree** | `node1/4b7749` | `node1/4b7749` | `not_found` |
+| 3 | **cut n1 <-> n2** |  |  |  |
+| 4 | **cut n1 <-> n3** |  |  |  |
+| 5 | **cut n2 <-> n3** |  |  |  |
+| 6 | wait 15000ms for the registry to react |  |  |  |
+| 7 | `lookup` on all nodes (full_split/service) - **agree** | `node1/4b7749` | `node1/4b7749` | `node1/4b7749` |
+| 8 | _Both other nodes claim the name as well._ |  |  |  |
+| 9 | `start_process` on n2 (full_split/service) |  | error: `no_quorum` _(7004ms)_ |  |
+| 10 | `start_process` on n3 (full_split/service) |  |  | error: `no_quorum` _(7006ms)_ |
+| 11 | `lookup` on all nodes (full_split/service) - **agree** | `node1/4b7749` | `node1/4b7749` | `node1/4b7749` |
+| 12 | **heal the network** |  |  |  |
+| 13 | wait 15000ms for the registry to react |  |  |  |
+| 14 | _After healing: how many owners survive?_ |  |  |  |
+| 15 | `lookup` on all nodes (full_split/service) - **agree** | `node1/4b7749` | `node1/4b7749` | `node1/4b7749` |
+
+### locker_master
+
+#### baseline
+
+Healthy cluster. Establishes what the registry does when nothing is wrong: a name is visible everywhere, a second claim is refused, and the name is free again after an orderly stop.
+
+| # | Step | n1 | n2 | n3 |
+| --- | --- | --- | --- | --- |
+| 1 | `start_process` on n1 (baseline/service) | started `node1/9a0e78` |  |  |
+| 2 | `lookup` on all nodes (baseline/service) - **agree** | `node1/9a0e78` | `node1/9a0e78` | `node1/9a0e78` |
+| 3 | _A second node claims the same name._ |  |  |  |
+| 4 | `start_process` on n2 (baseline/service) |  | error: `no_quorum` |  |
+| 5 | `lookup` on all nodes (baseline/service) - **agree** | `node1/9a0e78` | `node1/9a0e78` | `node1/9a0e78` |
+| 6 | `renew_lease` on n2 (baseline/service) |  | `renewed` |  |
+| 7 | `stop_process` on n1 (baseline/service) | `stopped` |  |  |
+| 8 | `lookup` on all nodes (baseline/service) - **agree** | `not_found` | `not_found` | `not_found` |
+
+#### process death
+
+The registered process is killed without unregistering. Shows whether the registry monitors the process and frees the name by itself, or keeps handing out a dead pid.
+
+| # | Step | n1 | n2 | n3 |
+| --- | --- | --- | --- | --- |
+| 1 | `start_process` on n1 (process_death/service) | started `node1/cd48d4` |  |  |
+| 2 | `lookup` on all nodes (process_death/service) - **agree** | `node1/cd48d4` | `node1/cd48d4` | `node1/cd48d4` |
+| 3 | `kill_process` on n1 (process_death/service) | `killed` |  |  |
+| 4 | wait 2000ms |  |  |  |
+| 5 | `lookup` on all nodes (process_death/service) - **agree** | `node1/cd48d4` | `node1/cd48d4` | `node1/cd48d4` |
+| 6 | _Another node tries to take the name over._ |  |  |  |
+| 7 | `start_process` on n2 (process_death/service) |  | error: `no_quorum` |  |
+| 8 | `lookup` on all nodes (process_death/service) - **agree** | `node1/cd48d4` | `node1/cd48d4` | `node1/cd48d4` |
+
+#### lease expiry
+
+The lease is shortened to 3s and then nobody renews it. Registries without leases keep the name forever; a lease based registry drops it and lets another node take over.
+
+| # | Step | n1 | n2 | n3 |
+| --- | --- | --- | --- | --- |
+| 1 | set lease_ms to 3000 |  |  |  |
+| 2 | `start_process` on n1 (lease_expiry/service) | started `node1/b471f1` |  |  |
+| 3 | `lookup` on all nodes (lease_expiry/service) - **agree** | `node1/b471f1` | `node1/b471f1` | `node1/b471f1` |
 | 4 | `renew_lease` on n1 (lease_expiry/service) | `renewed` |  |  |
 | 5 | _Wait past the lease without renewing._ |  |  |  |
 | 6 | wait 6000ms |  |  |  |
@@ -493,19 +753,29 @@ The cluster splits into a majority (n1, n2) and a minority (n3). The owner is on
 
 | # | Step | n1 | n2 | n3 |
 | --- | --- | --- | --- | --- |
-| 1 | `start_process` on n1 (symmetric_split/service) | started `node1/27eac7` |  |  |
-| 2 | `lookup` on all nodes (symmetric_split/service) - **agree** | `node1/27eac7` | `node1/27eac7` | `node1/27eac7` |
+| 1 | `start_process` on n1 (symmetric_split/service) | started `node1/cb0e4f` |  |  |
+| 2 | `lookup` on all nodes (symmetric_split/service) - **agree** | `node1/cb0e4f` | `node1/cb0e4f` | `node1/cb0e4f` |
 | 3 | **isolate n3** |  |  |  |
 | 4 | wait 15000ms for the registry to react |  |  |  |
-| 5 | `lookup` on all nodes (symmetric_split/service) - **agree** | `node1/27eac7` | `node1/27eac7` | `node1/27eac7` |
+| 5 | `lookup` on all nodes (symmetric_split/service) - **disagree** | `node1/cb0e4f` | `node1/cb0e4f` | rpc error: `{'EXIT',{{master_unreachable,nodedown},
+         [{registry_locker,found,1,
+                           [{file,"/app/src/registry_locker.erl"},{line,138}]},
+          {action_lookup,run,1,
+                         [{file,"/app/src/action_lookup.erl"},{line,18}]},
+          {action,run,2,[]}]}}` _(7003ms)_ |
 | 6 | _The minority side claims the same name._ |  |  |  |
 | 7 | `start_process` on n3 (symmetric_split/service) |  |  | error: `no_quorum` _(7010ms)_ |
-| 8 | `lookup` on all nodes (symmetric_split/service) - **agree** | `node1/27eac7` | `node1/27eac7` | `node1/27eac7` |
-| 9 | `renew_lease` on n1 (symmetric_split/service) | `renewed` _(7003ms)_ |  |  |
+| 8 | `lookup` on all nodes (symmetric_split/service) - **disagree** | `node1/cb0e4f` | `node1/cb0e4f` | rpc error: `{'EXIT',{{master_unreachable,nodedown},
+         [{registry_locker,found,1,
+                           [{file,"/app/src/registry_locker.erl"},{line,138}]},
+          {action_lookup,run,1,
+                         [{file,"/app/src/action_lookup.erl"},{line,18}]},
+          {action,run,2,[]}]}}` _(7004ms)_ |
+| 9 | `renew_lease` on n1 (symmetric_split/service) | `renewed` |  |  |
 | 10 | **heal the network** |  |  |  |
 | 11 | wait 15000ms for the registry to react |  |  |  |
 | 12 | _After healing: does the cluster agree again?_ |  |  |  |
-| 13 | `lookup` on all nodes (symmetric_split/service) - **agree** | `node1/27eac7` | `node1/27eac7` | `node1/27eac7` |
+| 13 | `lookup` on all nodes (symmetric_split/service) - **agree** | `node1/cb0e4f` | `node1/cb0e4f` | `node1/cb0e4f` |
 
 #### owner isolated
 
@@ -513,18 +783,28 @@ The node owning the name (n3) is cut off from the majority. This is the failover
 
 | # | Step | n1 | n2 | n3 |
 | --- | --- | --- | --- | --- |
-| 1 | `start_process` on n3 (owner_isolated/service) |  |  | started `node3/0818cc` |
-| 2 | `lookup` on all nodes (owner_isolated/service) - **agree** | `node3/0818cc` | `node3/0818cc` | `node3/0818cc` |
+| 1 | `start_process` on n3 (owner_isolated/service) |  |  | started `node3/6b8a2f` |
+| 2 | `lookup` on all nodes (owner_isolated/service) - **agree** | `node3/6b8a2f` | `node3/6b8a2f` | `node3/6b8a2f` |
 | 3 | **isolate n3** |  |  |  |
 | 4 | wait 15000ms for the registry to react |  |  |  |
-| 5 | `lookup` on all nodes (owner_isolated/service) - **agree** | `node3/0818cc` | `node3/0818cc` | `node3/0818cc` |
+| 5 | `lookup` on all nodes (owner_isolated/service) - **disagree** | `node3/6b8a2f` | `node3/6b8a2f` | rpc error: `{'EXIT',{{master_unreachable,nodedown},
+         [{registry_locker,found,1,
+                           [{file,"/app/src/registry_locker.erl"},{line,138}]},
+          {action_lookup,run,1,
+                         [{file,"/app/src/action_lookup.erl"},{line,18}]},
+          {action,run,2,[]}]}}` _(7016ms)_ |
 | 6 | _The majority side tries to take the name over._ |  |  |  |
-| 7 | `start_process` on n1 (owner_isolated/service) | error: `no_quorum` _(7008ms)_ |  |  |
-| 8 | `lookup` on all nodes (owner_isolated/service) - **agree** | `node3/0818cc` | `node3/0818cc` | `node3/0818cc` |
+| 7 | `start_process` on n1 (owner_isolated/service) | error: `no_quorum` |  |  |
+| 8 | `lookup` on all nodes (owner_isolated/service) - **disagree** | `node3/6b8a2f` | `node3/6b8a2f` | rpc error: `{'EXIT',{{master_unreachable,nodedown},
+         [{registry_locker,found,1,
+                           [{file,"/app/src/registry_locker.erl"},{line,138}]},
+          {action_lookup,run,1,
+                         [{file,"/app/src/action_lookup.erl"},{line,18}]},
+          {action,run,2,[]}]}}` _(7004ms)_ |
 | 9 | **heal the network** |  |  |  |
 | 10 | wait 15000ms for the registry to react |  |  |  |
 | 11 | _After healing: one owner, or two?_ |  |  |  |
-| 12 | `lookup` on all nodes (owner_isolated/service) - **agree** | `node3/0818cc` | `node3/0818cc` | `node3/0818cc` |
+| 12 | `lookup` on all nodes (owner_isolated/service) - **agree** | `node3/6b8a2f` | `node3/6b8a2f` | `node3/6b8a2f` |
 
 #### one sided split
 
@@ -532,17 +812,27 @@ n1 stops hearing from n3, but n3 still hears n1. The two nodes disagree about wh
 
 | # | Step | n1 | n2 | n3 |
 | --- | --- | --- | --- | --- |
-| 1 | `start_process` on n1 (one_sided_split/service) | started `node1/67249b` |  |  |
-| 2 | `lookup` on all nodes (one_sided_split/service) - **agree** | `node1/67249b` | `node1/67249b` | `node1/67249b` |
+| 1 | `start_process` on n1 (one_sided_split/service) | started `node1/2a4164` |  |  |
+| 2 | `lookup` on all nodes (one_sided_split/service) - **agree** | `node1/2a4164` | `node1/2a4164` | `node1/2a4164` |
 | 3 | **cut n1 <- n3** (one sided: n3 still hears n1) |  |  |  |
 | 4 | wait 15000ms for the registry to react |  |  |  |
-| 5 | `lookup` on all nodes (one_sided_split/service) - **agree** | `node1/67249b` | `node1/67249b` | `node1/67249b` |
+| 5 | `lookup` on all nodes (one_sided_split/service) - **disagree** | `node1/2a4164` | `node1/2a4164` | rpc error: `{'EXIT',{{master_unreachable,nodedown},
+         [{registry_locker,found,1,
+                           [{file,"/app/src/registry_locker.erl"},{line,138}]},
+          {action_lookup,run,1,
+                         [{file,"/app/src/action_lookup.erl"},{line,18}]},
+          {action,run,2,[]}]}}` _(7004ms)_ |
 | 6 | _n3 claims the same name while it still believes n1 is up._ |  |  |  |
-| 7 | `start_process` on n3 (one_sided_split/service) |  |  | error: `no_quorum` _(7008ms)_ |
-| 8 | `lookup` on all nodes (one_sided_split/service) - **agree** | `node1/67249b` | `node1/67249b` | `node1/67249b` |
+| 7 | `start_process` on n3 (one_sided_split/service) |  |  | error: `no_quorum` _(7006ms)_ |
+| 8 | `lookup` on all nodes (one_sided_split/service) - **disagree** | `node1/2a4164` | `node1/2a4164` | rpc error: `{'EXIT',{{master_unreachable,nodedown},
+         [{registry_locker,found,1,
+                           [{file,"/app/src/registry_locker.erl"},{line,138}]},
+          {action_lookup,run,1,
+                         [{file,"/app/src/action_lookup.erl"},{line,18}]},
+          {action,run,2,[]}]}}` _(7002ms)_ |
 | 9 | **heal the network** |  |  |  |
 | 10 | wait 15000ms for the registry to react |  |  |  |
-| 11 | `lookup` on all nodes (one_sided_split/service) - **agree** | `node1/67249b` | `node1/67249b` | `node1/67249b` |
+| 11 | `lookup` on all nodes (one_sided_split/service) - **agree** | `node1/2a4164` | `node1/2a4164` | `node1/2a4164` |
 
 #### full split
 
@@ -550,19 +840,29 @@ Every node is cut off from every other node, so nobody has a majority. All three
 
 | # | Step | n1 | n2 | n3 |
 | --- | --- | --- | --- | --- |
-| 1 | `start_process` on n1 (full_split/service) | started `node1/e0c194` |  |  |
-| 2 | `lookup` on all nodes (full_split/service) - **agree** | `node1/e0c194` | `node1/e0c194` | `node1/e0c194` |
+| 1 | `start_process` on n1 (full_split/service) | started `node1/77bc57` |  |  |
+| 2 | `lookup` on all nodes (full_split/service) - **agree** | `node1/77bc57` | `node1/77bc57` | `node1/77bc57` |
 | 3 | **cut n1 <-> n2** |  |  |  |
 | 4 | **cut n1 <-> n3** |  |  |  |
 | 5 | **cut n2 <-> n3** |  |  |  |
 | 6 | wait 15000ms for the registry to react |  |  |  |
-| 7 | `lookup` on all nodes (full_split/service) - **agree** | `node1/e0c194` | `node1/e0c194` | `node1/e0c194` |
+| 7 | `lookup` on all nodes (full_split/service) - **disagree** | `node1/77bc57` | `node1/77bc57` | rpc error: `{'EXIT',{{master_unreachable,nodedown},
+         [{registry_locker,found,1,
+                           [{file,"/app/src/registry_locker.erl"},{line,138}]},
+          {action_lookup,run,1,
+                         [{file,"/app/src/action_lookup.erl"},{line,18}]},
+          {action,run,2,[]}]}}` _(7008ms)_ |
 | 8 | _Both other nodes claim the name as well._ |  |  |  |
-| 9 | `start_process` on n2 (full_split/service) |  | error: `no_quorum` _(7014ms)_ |  |
-| 10 | `start_process` on n3 (full_split/service) |  |  | error: `no_quorum` _(7006ms)_ |
-| 11 | `lookup` on all nodes (full_split/service) - **agree** | `node1/e0c194` | `node1/e0c194` | `node1/e0c194` |
+| 9 | `start_process` on n2 (full_split/service) |  | error: `no_quorum` _(7009ms)_ |  |
+| 10 | `start_process` on n3 (full_split/service) |  |  | error: `no_quorum` _(7005ms)_ |
+| 11 | `lookup` on all nodes (full_split/service) - **disagree** | `node1/77bc57` | `node1/77bc57` | rpc error: `{'EXIT',{{master_unreachable,nodedown},
+         [{registry_locker,found,1,
+                           [{file,"/app/src/registry_locker.erl"},{line,138}]},
+          {action_lookup,run,1,
+                         [{file,"/app/src/action_lookup.erl"},{line,18}]},
+          {action,run,2,[]}]}}` _(7004ms)_ |
 | 12 | **heal the network** |  |  |  |
 | 13 | wait 15000ms for the registry to react |  |  |  |
 | 14 | _After healing: how many owners survive?_ |  |  |  |
-| 15 | `lookup` on all nodes (full_split/service) - **agree** | `node1/e0c194` | `node1/e0c194` | `node1/e0c194` |
+| 15 | `lookup` on all nodes (full_split/service) - **agree** | `node1/77bc57` | `node1/77bc57` | `node1/77bc57` |
 

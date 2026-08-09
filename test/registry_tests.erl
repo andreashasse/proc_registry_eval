@@ -7,6 +7,8 @@
     {setup, 1},
     {child_specs, 0},
     {on_cluster_ready, 1},
+    {settings, 0},
+    {application, 0},
     {register_name, 2},
     {whereis_name, 1},
     {unregister_name, 1},

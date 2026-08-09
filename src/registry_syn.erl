@@ -7,7 +7,7 @@
 -module(registry_syn).
 -behaviour(registry).
 
--export([setup/1, child_specs/0, on_cluster_ready/1]).
+-export([setup/1, child_specs/0, on_cluster_ready/1, settings/0, application/0]).
 -export([register_name/2, whereis_name/1, unregister_name/1, renew_lease/2]).
 
 -define(SCOPE, workbench).
@@ -24,6 +24,14 @@ child_specs() ->
 -spec on_cluster_ready([node()]) -> ok.
 on_cluster_ready(_Peers) ->
     ok.
+
+-spec application() -> atom().
+application() ->
+    syn.
+
+-spec settings() -> [{binary(), binary()}].
+settings() ->
+    [].
 
 -spec register_name(workbench:key(), pid()) -> ok | {error, term()}.
 register_name(Key, Pid) ->

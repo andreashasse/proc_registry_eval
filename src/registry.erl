@@ -5,7 +5,7 @@
 -module(registry).
 
 -export([names/0, adapters/0, adapter/0]).
--export([setup/1, child_specs/0, on_cluster_ready/1]).
+-export([setup/1, child_specs/0, on_cluster_ready/1, settings/0, application/0]).
 -export([register_name/2, whereis_name/1, unregister_name/1, renew_lease/2]).
 
 -type key() :: workbench:key().
@@ -21,6 +21,14 @@
 %% Called once after every node has booted, for registries that need to be
 %% told the cluster membership explicitly.
 -callback on_cluster_ready(Peers :: [node()]) -> ok.
+
+%% The OTP application the registry lives in, so the report can name the
+%% version that was actually evaluated.
+-callback application() -> atom().
+
+%% How this registry is configured, for the report. Anything a reader would
+%% need to know to make sense of the numbers.
+-callback settings() -> [{binary(), binary()}].
 
 %% Claim Key for Pid, cluster wide.
 -callback register_name(key(), pid()) -> ok | {error, reason()}.
@@ -41,7 +49,7 @@
 %% The registries under evaluation, in report order.
 -spec names() -> [atom()].
 names() ->
-    [global, gproc, syn, locker].
+    [global, gproc, syn, locker, locker_replica, locker_master].
 
 -spec adapters() -> #{atom() => module()}.
 adapters() ->
@@ -49,7 +57,9 @@ adapters() ->
         global => registry_global,
         gproc => registry_gproc,
         syn => registry_syn,
-        locker => registry_locker
+        locker => registry_locker,
+        locker_replica => registry_locker_replica,
+        locker_master => registry_locker_master
     }.
 
 -spec adapter() -> module().
@@ -68,6 +78,12 @@ child_specs() -> (adapter()):child_specs().
 
 -spec on_cluster_ready([node()]) -> ok.
 on_cluster_ready(Peers) -> (adapter()):on_cluster_ready(Peers).
+
+-spec settings() -> [{binary(), binary()}].
+settings() -> (adapter()):settings().
+
+-spec application() -> atom().
+application() -> (adapter()):application().
 
 -spec register_name(key(), pid()) -> ok | {error, reason()}.
 register_name(Key, Pid) -> (adapter()):register_name(Key, Pid).
