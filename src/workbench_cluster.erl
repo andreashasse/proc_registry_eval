@@ -15,7 +15,9 @@
 
 -define(CONNECT_TIMEOUT_MS, 60_000).
 %% A node being added may not be able to reach every member, so joining
-%% gives up on the ones it cannot reach rather than on the join.
+%% gives up on the ones it cannot reach rather than on the join. Longer
+%% than `net_setuptime', so that a member which is merely unreachable gets
+%% to say so rather than be timed out here.
 -define(JOIN_CONNECT_TIMEOUT_MS, 10_000).
 
 %%%===================================================================
@@ -111,10 +113,11 @@ await(Missing, Deadline) ->
 
 %% Connect to as many of Nodes as answer within the timeout.
 %%
-%% `net_kernel:connect_node/1' takes no timeout and a connection to a node
-%% behind dropped packets takes minutes to fail, so the attempts run in
-%% their own processes and whatever has not answered by the deadline
-%% counts as unreachable.
+%% `net_kernel:connect_node/1' takes no timeout of its own and gives up
+%% after `net_setuptime', 7 seconds by default, so a node added to a
+%% partitioned cluster waits that long for every member it cannot reach.
+%% Running the attempts in their own processes makes that one wait rather
+%% than one per unreachable member, and puts a bound on it either way.
 -spec connect([node()], pos_integer()) -> [node()].
 connect(Nodes, TimeoutMs) ->
     Self = self(),
