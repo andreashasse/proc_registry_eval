@@ -8,12 +8,18 @@
 -module(workbench_worker).
 -behaviour(gen_server).
 
--export([start_link/1]).
+-export([start_link/1, run/2]).
 -export([init/1, handle_call/3, handle_cast/2, terminate/2]).
 
 -spec start_link(workbench:key()) -> gen_server:start_ret().
 start_link(Key) ->
     gen_server:start_link(?MODULE, Key, []).
+
+%% Some registries register the calling process rather than a pid you hand
+%% them, so the claim has to be made from in here.
+-spec run(pid(), fun(() -> Result)) -> Result.
+run(Pid, Fun) ->
+    gen_server:call(Pid, {run, Fun}).
 
 -spec init(workbench:key()) -> {ok, workbench:key()}.
 init(Key) ->
@@ -22,10 +28,12 @@ init(Key) ->
     process_flag(trap_exit, true),
     {ok, Key}.
 
--spec handle_call(key, gen_server:from(), workbench:key()) ->
-    {reply, workbench:key(), workbench:key()}.
+-spec handle_call(key | {run, fun(() -> term())}, gen_server:from(), workbench:key()) ->
+    {reply, term(), workbench:key()}.
 handle_call(key, _From, Key) ->
-    {reply, Key, Key}.
+    {reply, Key, Key};
+handle_call({run, Fun}, _From, Key) ->
+    {reply, Fun(), Key}.
 
 -spec handle_cast(term(), workbench:key()) -> {noreply, workbench:key()}.
 handle_cast(_Msg, Key) ->

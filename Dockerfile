@@ -1,5 +1,6 @@
-# Elixir as well as Erlang, because HighlanderPG is an Elixir library.
-FROM elixir:1.18-otp-27
+# Elixir as well as Erlang, because three of the registries are Elixir
+# libraries. 1.19 because group requires it.
+FROM elixir:1.19-otp-27
 
 # iptables is how the workbench cuts the network between the nodes, and
 # between a node and Postgres. The containers get NET_ADMIN for it in
