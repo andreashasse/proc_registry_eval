@@ -4,7 +4,7 @@
 %% has never seen before, so every conversion here has to be total.
 -module(fmt).
 
--export([text/1, format/2, binary/1]).
+-export([text/1, format/2, binary/1, printable/1]).
 
 %% A short, printable rendering of any term.
 -spec text(term()) -> binary().
@@ -18,6 +18,27 @@ text(Term) when is_list(Term) ->
     end;
 text(Term) ->
     format("~p", [Term]).
+
+%% Results are stored as Erlang source and read back with file:consult/1,
+%% which cannot parse pids, references, ports or funs. Anything of that
+%% kind becomes text before it is written down.
+-spec printable(term()) -> term().
+printable(Term) when is_pid(Term); is_reference(Term); is_port(Term); is_function(Term) ->
+    text(Term);
+printable(Term) when is_list(Term) ->
+    printable_list(Term);
+printable(Term) when is_tuple(Term) ->
+    list_to_tuple(printable_list(tuple_to_list(Term)));
+printable(Term) when is_map(Term) ->
+    maps:from_list([{printable(Key), printable(Value)} || Key := Value <- Term]);
+printable(Term) ->
+    Term.
+
+%% Improper lists show up in crash reasons, so this cannot use a
+%% comprehension.
+printable_list([]) -> [];
+printable_list([Head | Tail]) -> [printable(Head) | printable_list(Tail)];
+printable_list(Improper) -> printable(Improper).
 
 -spec format(io:format(), [term()]) -> binary().
 format(Format, Args) ->

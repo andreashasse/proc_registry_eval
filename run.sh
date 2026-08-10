@@ -9,7 +9,7 @@ cd "$(dirname "$0")"
 if [ "$#" -gt 0 ]; then
     registries=("$@")
 else
-    registries=(global gproc syn locker locker_replica locker_master)
+    registries=(global gproc syn locker highlander_pg)
 fi
 
 docker compose build

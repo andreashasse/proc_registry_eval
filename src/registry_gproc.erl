@@ -7,7 +7,8 @@
 -behaviour(registry).
 
 -export([setup/1, child_specs/0, on_cluster_ready/1, settings/0, application/0]).
--export([register_name/2, whereis_name/1, unregister_name/1, renew_lease/2]).
+-export([cleanup/0, frees_name_on_exit/0]).
+-export([claim/1, whereis_name/1, unregister_name/1, renew_lease/2]).
 
 -spec setup([node()]) -> ok.
 setup(Peers) ->
@@ -27,6 +28,17 @@ on_cluster_ready(_Peers) ->
 
 %% gproc signals a name that is already taken by raising `badarg', the same
 %% way it signals a malformed key, so the reason is passed through as is.
+%% Names disappear with the processes that hold them, which
+%% workbench_workers already stops.
+-spec cleanup() -> ok.
+cleanup() ->
+    ok.
+
+-spec frees_name_on_exit() -> boolean().
+frees_name_on_exit() ->
+    % gproc monitors the process
+    true.
+
 -spec application() -> atom().
 application() ->
     gproc.
@@ -35,13 +47,14 @@ application() ->
 settings() ->
     [].
 
--spec register_name(workbench:key(), pid()) -> ok | {error, term()}.
-register_name(Key, Pid) ->
+-spec claim(workbench:key()) -> {ok, pid()} | {error, term()}.
+claim(Key) ->
+    {ok, Pid} = workbench_workers:start_worker(Key),
     try gproc:reg_other({n, g, Key}, Pid) of
-        true -> ok
+        true -> {ok, Pid}
     catch
-        error:Reason -> {error, Reason};
-        exit:Reason -> {error, Reason}
+        error:Reason -> registry:discard(Pid, Reason);
+        exit:Reason -> registry:discard(Pid, Reason)
     end.
 
 -spec whereis_name(workbench:key()) -> pid() | undefined.

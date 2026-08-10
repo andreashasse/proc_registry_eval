@@ -264,6 +264,8 @@ network_label({cut_one_way, A, B}) ->
         fmt:text(A),
         <<")">>
     ];
+network_label({cut_db, NodeId}) ->
+    [<<"**cut ">>, fmt:text(NodeId), <<" <- postgres**">>];
 network_label({isolate, NodeId}) ->
     [<<"**isolate ">>, fmt:text(NodeId), <<"**">>];
 network_label(heal) ->

@@ -74,6 +74,8 @@ check_step({cut_one_way, A, B}) ->
     ?assertNotEqual(A, B);
 check_step({isolate, NodeId}) ->
     ?assert(lists:member(NodeId, ?NODE_IDS));
+check_step({cut_db, NodeId}) ->
+    ?assert(lists:member(NodeId, ?NODE_IDS));
 check_step(heal) ->
     ok;
 check_step(settle) ->
@@ -101,6 +103,7 @@ cuts_something(Steps) ->
             ({cut, _A, _B}) -> true;
             ({cut_one_way, _A, _B}) -> true;
             ({isolate, _NodeId}) -> true;
+            ({cut_db, _NodeId}) -> true;
             (_Other) -> false
         end,
         Steps

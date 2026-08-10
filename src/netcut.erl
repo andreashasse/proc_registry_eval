@@ -12,9 +12,11 @@
 
 -export([block/1, unblock_all/0]).
 
--spec block(node()) -> ok | {error, term()}.
-block(Peer) ->
-    case address_of(Peer) of
+%% A target is either another cluster node or a plain hostname, which is
+%% how a node is cut off from Postgres.
+-spec block(node() | string()) -> ok | {error, term()}.
+block(Target) ->
+    case address_of(Target) of
         {ok, Address} ->
             sh("iptables -I INPUT 1 -s " ++ Address ++ " -j DROP");
         {error, Reason} ->
@@ -26,9 +28,9 @@ unblock_all() ->
     sh("iptables -F INPUT").
 
 %% The IP address of the container running Peer, via docker's DNS.
--spec address_of(node()) -> {ok, string()} | {error, term()}.
-address_of(Peer) ->
-    [_Name, Host] = string:split(atom_to_list(Peer), "@"),
+-spec address_of(node() | string()) -> {ok, string()} | {error, term()}.
+address_of(Target) ->
+    Host = hostname_of(Target),
     case inet:getaddr(Host, inet) of
         {ok, Address} ->
             case inet:ntoa(Address) of
@@ -38,6 +40,13 @@ address_of(Peer) ->
         {error, Reason} ->
             {error, {cannot_resolve, Host, Reason}}
     end.
+
+-spec hostname_of(node() | string()) -> string().
+hostname_of(Node) when is_atom(Node) ->
+    [_Name, Host] = string:split(atom_to_list(Node), "@"),
+    Host;
+hostname_of(Host) when is_list(Host) ->
+    Host.
 
 -spec sh(string()) -> ok | {error, term()}.
 sh(Command) ->

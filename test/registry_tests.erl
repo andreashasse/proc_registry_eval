@@ -9,7 +9,9 @@
     {on_cluster_ready, 1},
     {settings, 0},
     {application, 0},
-    {register_name, 2},
+    {cleanup, 0},
+    {frees_name_on_exit, 0},
+    {claim, 1},
     {whereis_name, 1},
     {unregister_name, 1},
     {renew_lease, 2}

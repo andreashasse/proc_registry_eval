@@ -4,7 +4,8 @@ name: proc-registry-eval
 x-node: &node
   build: .
   image: proc-registry-eval:latest
-  # iptables needs NET_ADMIN to cut the network between the nodes.
+  # iptables needs NET_ADMIN to cut the network between the nodes, and
+  # between a node and Postgres.
   cap_add: ["NET_ADMIN"]
   environment: &settings
     REGISTRY: ${REGISTRY:-global}
@@ -14,8 +15,18 @@ x-node: &node
     ACTION_TIMEOUT_MS: ${ACTION_TIMEOUT_MS:-20000}
     # Each phase of a locker write waits this long for the masters.
     LOCKER_TIMEOUT_MS: ${LOCKER_TIMEOUT_MS:-5000}
+    # How often a HighlanderPG contender asks Postgres for the lock.
+    HIGHLANDER_POLLING_MS: ${HIGHLANDER_POLLING_MS:-300}
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: 5432
+    POSTGRES_USER: workbench
+    POSTGRES_PASSWORD: workbench
+    POSTGRES_DB: workbench
   command: ["node"]
   networks: ["cluster"]
+  depends_on:
+    postgres:
+      condition: service_healthy
 
 services:
   node1:
@@ -29,6 +40,22 @@ services:
   node3:
     <<: *node
     hostname: node3
+
+  # Only highlander_pg uses it, but it is always up so that every run has
+  # the same cluster around it.
+  postgres:
+    image: postgres:17-alpine
+    hostname: postgres
+    environment:
+      POSTGRES_USER: workbench
+      POSTGRES_PASSWORD: workbench
+      POSTGRES_DB: workbench
+    networks: ["cluster"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workbench"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
 
   # Started with `docker compose run`, never with `up`: it drives the
   # scenarios and then exits.

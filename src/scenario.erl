@@ -11,6 +11,9 @@
 %%   {cut, A, B}           A and B stop hearing from each other
 %%   {cut_one_way, A, B}   A stops hearing from B, B still hears A
 %%   {isolate, Node}       Node is cut from every other node
+%%   {cut_db, Node}        Node stops hearing from Postgres. Only one
+%%                         direction, because the database container is not
+%%                         ours to run iptables in
 %%   heal                  remove all cuts and reconnect
 %%   settle                wait SETTLE_MS for the registry to react
 %%   {wait, Ms}            wait a specific time
@@ -29,6 +32,7 @@
     | {cut, workbench:node_id(), workbench:node_id()}
     | {cut_one_way, workbench:node_id(), workbench:node_id()}
     | {isolate, workbench:node_id()}
+    | {cut_db, workbench:node_id()}
     | heal
     | settle
     | {wait, pos_integer()}
@@ -49,5 +53,6 @@ all() ->
         scenario_symmetric_split,
         scenario_owner_isolated,
         scenario_one_sided_split,
-        scenario_full_split
+        scenario_full_split,
+        scenario_database_lost
     ].

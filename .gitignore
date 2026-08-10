@@ -3,3 +3,5 @@ _build/
 rebar3.crashdump
 erl_crash.dump
 results/*.result
+elixir/deps/
+elixir/_build/

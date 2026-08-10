@@ -66,6 +66,7 @@ reset(Nodes) ->
     ok = multi(Nodes, netcut, unblock_all, []),
     ok = reconnect(Nodes),
     ok = multi(Nodes, workbench_workers, stop_all, []),
+    ok = multi(Nodes, registry, cleanup, []),
     ok = multi(Nodes, workbench, reset_lease_ms, []),
     timer:sleep(?CLEANUP_SETTLE_MS),
     ok.
@@ -122,6 +123,10 @@ execute({isolate, NodeId}, _Nodes) ->
     ],
     log("isolate ~p", [NodeId]),
     #{kind => network, detail => {isolate, NodeId}};
+execute({cut_db, NodeId}, _Nodes) ->
+    ok = block(NodeId, workbench:database_host()),
+    log("cut ~p <- postgres", [NodeId]),
+    #{kind => network, detail => {cut_db, NodeId}};
 execute(heal, Nodes) ->
     ok = multi(Nodes, netcut, unblock_all, []),
     ok = reconnect(Nodes),
@@ -151,8 +156,8 @@ do_action(NodeId, Action, Key) ->
 %% An action that does not answer in time is a result in itself.
 -spec result(term()) -> action:result().
 result({badrpc, timeout}) -> timeout;
-result({badrpc, Reason}) -> {rpc_error, Reason};
-result(Reply) -> Reply.
+result({badrpc, Reason}) -> {rpc_error, fmt:printable(Reason)};
+result(Reply) -> fmt:printable(Reply).
 
 %% Do all nodes give the same answer?
 -spec agreement([{workbench:node_id(), {action:result(), non_neg_integer()}}]) ->
@@ -163,11 +168,14 @@ agreement(Results) ->
         _Several -> disagree
     end.
 
--spec block(workbench:node_id(), workbench:node_id()) -> ok.
-block(NodeId, PeerId) ->
+-spec block(workbench:node_id(), workbench:node_id() | string()) -> ok.
+block(NodeId, Target) ->
     Node = workbench:node_of(NodeId),
-    Peer = workbench:node_of(PeerId),
-    ok = rpc:call(Node, netcut, block, [Peer], 10_000).
+    ok = rpc:call(Node, netcut, block, [resolve(Target)], 10_000).
+
+-spec resolve(workbench:node_id() | string()) -> node() | string().
+resolve(Host) when is_list(Host) -> Host;
+resolve(NodeId) -> workbench:node_of(NodeId).
 
 %%%===================================================================
 %%% Cluster
@@ -250,7 +258,8 @@ environment([Node | _]) ->
         {<<"registry version">>, registry_version(Node)},
         {<<"settle after network change">>, fmt:text(workbench:settle_ms())},
         {<<"default lease">>, fmt:text(workbench:lease_ms())},
-        {<<"action timeout">>, fmt:text(workbench:action_timeout_ms())}
+        {<<"action timeout">>, fmt:text(workbench:action_timeout_ms())},
+        {<<"wait for a pending claim">>, fmt:text(workbench:claim_settle_ms())}
     ] ++ registry_settings(Node).
 
 %% Whatever the registry itself thinks is worth knowing, asked on a node so

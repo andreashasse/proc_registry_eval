@@ -19,7 +19,9 @@ init([]) ->
         id => workbench_worker,
         start => {workbench_worker, start_link, []},
         restart => temporary,
-        shutdown => brutal_kill
+        %% Not brutal_kill: the worker may have a name to give back, see
+        %% workbench_worker:terminate/2.
+        shutdown => 5000
     },
     {ok, {Flags, [Child]}}.
 

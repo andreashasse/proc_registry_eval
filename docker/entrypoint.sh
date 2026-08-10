@@ -3,7 +3,9 @@
 # how the cluster under test is configured.
 set -eu
 
-export ERL_LIBS=/app/_build/default/lib
+# Three code paths: what rebar3 built, what mix built (highlander_pg and
+# its dependencies), and Elixir's own standard library.
+export ERL_LIBS=/app/_build/default/lib:/app/elixir/_build/prod/lib:/usr/local/lib/elixir/lib
 
 # Distributed Erlang requires the same tick time on every node. 5 seconds
 # instead of the 60 second default, so a node notices a broken connection

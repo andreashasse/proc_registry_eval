@@ -8,7 +8,8 @@
 -behaviour(registry).
 
 -export([setup/1, child_specs/0, on_cluster_ready/1, settings/0, application/0]).
--export([register_name/2, whereis_name/1, unregister_name/1, renew_lease/2]).
+-export([cleanup/0, frees_name_on_exit/0]).
+-export([claim/1, whereis_name/1, unregister_name/1, renew_lease/2]).
 
 -define(SCOPE, workbench).
 
@@ -25,6 +26,17 @@ child_specs() ->
 on_cluster_ready(_Peers) ->
     ok.
 
+%% Names disappear with the processes that hold them, which
+%% workbench_workers already stops.
+-spec cleanup() -> ok.
+cleanup() ->
+    ok.
+
+-spec frees_name_on_exit() -> boolean().
+frees_name_on_exit() ->
+    % syn monitors the process
+    true.
+
 -spec application() -> atom().
 application() ->
     syn.
@@ -33,11 +45,12 @@ application() ->
 settings() ->
     [].
 
--spec register_name(workbench:key(), pid()) -> ok | {error, term()}.
-register_name(Key, Pid) ->
+-spec claim(workbench:key()) -> {ok, pid()} | {error, term()}.
+claim(Key) ->
+    {ok, Pid} = workbench_workers:start_worker(Key),
     case syn:register(?SCOPE, Key, Pid) of
-        ok -> ok;
-        {error, Reason} -> {error, Reason}
+        ok -> {ok, Pid};
+        {error, Reason} -> registry:discard(Pid, Reason)
     end.
 
 -spec whereis_name(workbench:key()) -> pid() | undefined.

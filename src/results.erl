@@ -39,5 +39,8 @@ read(Registry) ->
     File = filename:join(dir(), atom_to_list(Registry) ++ ".result"),
     case file:consult(File) of
         {ok, [Run]} -> {ok, Run};
-        {error, _} -> missing
+        {error, enoent} -> missing;
+        %% A registry silently dropped from the report is worse than a
+        %% report that refuses to render.
+        {error, Reason} -> error({unreadable_result, File, Reason})
     end.

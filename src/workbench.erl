@@ -7,6 +7,7 @@
 
 -export([boot/0]).
 -export([registry/0, peers/0, settle_ms/0, action_timeout_ms/0, env/2]).
+-export([database_host/0, claim_settle_ms/0]).
 -export([lease_ms/0, set_lease_ms/1, reset_lease_ms/0]).
 -export([node_of/1, node_ids/0]).
 -export([describe/1]).
@@ -111,6 +112,19 @@ default_lease_ms() ->
     list_to_integer(env("LEASE_MS", "60000")).
 
 %% Give up on an action after this long and record a timeout.
+%% The hostname of the database, for registries that keep their state
+%% there and for cutting a node off from it.
+-spec database_host() -> string().
+database_host() ->
+    env("POSTGRES_HOST", "postgres").
+
+%% How long to wait for a registry that answers a claim with `pending' to
+%% decide who owns the name. Only registries that settle asynchronously,
+%% such as highlander_pg, ever use it.
+-spec claim_settle_ms() -> pos_integer().
+claim_settle_ms() ->
+    list_to_integer(env("CLAIM_SETTLE_MS", "3000")).
+
 -spec action_timeout_ms() -> pos_integer().
 action_timeout_ms() ->
     list_to_integer(env("ACTION_TIMEOUT_MS", "20000")).

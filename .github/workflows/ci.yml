@@ -101,9 +101,11 @@ jobs:
       - uses: actions/checkout@v4
 
       # Runs the real thing: three containers, iptables partitions, every
-      # scenario. One registry only, to keep CI under a few minutes.
-      - name: Run the workbench against global
-        run: SETTLE_MS=8000 ./run.sh global
+      # scenario. Two registries rather than all five, to keep CI short:
+      # global for the BEAM path, highlander_pg for the Elixir and Postgres
+      # one, which has the most that can break.
+      - name: Run the workbench
+        run: SETTLE_MS=8000 ./run.sh global highlander_pg
 
       - name: Show the report
         run: cat results/RESULTS.md

@@ -6,7 +6,8 @@
 
 -export([names/0, adapters/0, adapter/0]).
 -export([setup/1, child_specs/0, on_cluster_ready/1, settings/0, application/0]).
--export([register_name/2, whereis_name/1, unregister_name/1, renew_lease/2]).
+-export([cleanup/0, frees_name_on_exit/0]).
+-export([claim/1, discard/2, whereis_name/1, unregister_name/1, renew_lease/2]).
 
 -type key() :: workbench:key().
 -type reason() :: term().
@@ -22,6 +23,15 @@
 %% told the cluster membership explicitly.
 -callback on_cluster_ready(Peers :: [node()]) -> ok.
 
+%% Does the registry give the name back by itself when the owner dies?
+%% locker does not: it holds the key until the lease expires, so a process
+%% registered there has to release it on the way out.
+-callback frees_name_on_exit() -> boolean().
+
+%% Forget everything this registry is holding, so the next scenario starts
+%% from a clean cluster.
+-callback cleanup() -> ok.
+
 %% The OTP application the registry lives in, so the report can name the
 %% version that was actually evaluated.
 -callback application() -> atom().
@@ -30,8 +40,11 @@
 %% need to know to make sense of the numbers.
 -callback settings() -> [{binary(), binary()}].
 
-%% Claim Key for Pid, cluster wide.
--callback register_name(key(), pid()) -> ok | {error, reason()}.
+%% Make a process own Key, cluster wide. The adapter starts the process
+%% itself, because not every registry lets you hand it one that already
+%% exists. `pending' means the claim was accepted but who ends up owning
+%% the name is decided elsewhere, and later.
+-callback claim(key()) -> {ok, pid()} | pending | {error, reason()}.
 
 %% This node's answer to "who owns Key?".
 -callback whereis_name(key()) -> pid() | undefined.
@@ -49,7 +62,7 @@
 %% The registries under evaluation, in report order.
 -spec names() -> [atom()].
 names() ->
-    [global, gproc, syn, locker, locker_replica, locker_master].
+    [global, gproc, syn, locker, highlander_pg].
 
 -spec adapters() -> #{atom() => module()}.
 adapters() ->
@@ -58,8 +71,7 @@ adapters() ->
         gproc => registry_gproc,
         syn => registry_syn,
         locker => registry_locker,
-        locker_replica => registry_locker_replica,
-        locker_master => registry_locker_master
+        highlander_pg => registry_highlander_pg
     }.
 
 -spec adapter() -> module().
@@ -85,8 +97,21 @@ settings() -> (adapter()):settings().
 -spec application() -> atom().
 application() -> (adapter()):application().
 
--spec register_name(key(), pid()) -> ok | {error, reason()}.
-register_name(Key, Pid) -> (adapter()):register_name(Key, Pid).
+-spec cleanup() -> ok.
+cleanup() -> (adapter()):cleanup().
+
+-spec frees_name_on_exit() -> boolean().
+frees_name_on_exit() -> (adapter()):frees_name_on_exit().
+
+-spec claim(key()) -> {ok, pid()} | pending | {error, reason()}.
+claim(Key) -> (adapter()):claim(Key).
+
+%% Throw away the process started for a claim that was refused, so a failed
+%% claim leaves nothing behind.
+-spec discard(pid(), reason()) -> {error, reason()}.
+discard(Pid, Reason) ->
+    ok = gen_server:stop(Pid),
+    {error, Reason}.
 
 -spec whereis_name(key()) -> pid() | undefined.
 whereis_name(Key) -> (adapter()):whereis_name(Key).

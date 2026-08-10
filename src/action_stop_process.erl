@@ -10,6 +10,16 @@ name() -> stop_process.
 -spec describe() -> binary().
 describe() -> <<"unregister the name and stop the process">>.
 
+%% Giving up the name can already have stopped the process, when the
+%% registry is the one that started it.
+-spec stop(pid()) -> ok.
+stop(Pid) ->
+    try
+        gen_server:stop(Pid)
+    catch
+        exit:noproc -> ok
+    end.
+
 -spec run(workbench:key()) -> stopped | not_found | {error, term()}.
 run(Key) ->
     case registry:whereis_name(Key) of
@@ -18,7 +28,7 @@ run(Key) ->
         Pid ->
             case registry:unregister_name(Key) of
                 ok ->
-                    ok = gen_server:stop(Pid),
+                    ok = stop(Pid),
                     stopped;
                 {error, Reason} ->
                     {error, Reason}
