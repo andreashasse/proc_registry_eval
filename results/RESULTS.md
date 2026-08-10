@@ -2,51 +2,53 @@
 
 A three node Erlang cluster in docker. The network between the nodes is cut and healed with iptables while a fixed list of actions is run against each registry, and every answer every node gives is written down.
 
-Registries in this run: global, gproc, syn, locker, highlander_pg. Produced by `./run.sh`; nothing in this file is written by hand.
+Registries in this run: global, gproc, syn, horde, locker, highlander_pg. Produced by `./run.sh`; nothing in this file is written by hand.
 
 ## Environment
 
-| Setting | global | gproc | syn | locker | highlander_pg |
-| --- | --- | --- | --- | --- | --- |
-| run started | 2026-08-10T07:08:25Z | 2026-08-10T07:31:55Z | 2026-08-10T07:16:08Z | 2026-08-10T07:39:42Z | 2026-08-10T07:25:21Z |
-| OTP release | 27 | 27 | 27 | 27 | 27 |
-| net_ticktime | 5 | 5 | 5 | 5 | 5 |
-| kernel prevent_overlapping_partitions | true | true | true | true | true |
-| registry version | kernel 10.2.7.4 | gproc 1.3.0 | syn 3.4.2 | locker 6 | highlander_pg 1.0.8 |
-| settle after network change | 15000 | 15000 | 15000 | 15000 | 15000 |
-| default lease | 60000 | 60000 | 60000 | 60000 | 60000 |
-| action timeout | 20000 | 20000 | 20000 | 20000 | 20000 |
-| wait for a pending claim | 3000 | 3000 | 3000 | 3000 | 3000 |
-| locker write quorum | - | - | - | 2 of 3 masters | - |
-| locker call timeout | - | - | - | 5000ms | - |
-| highlander_pg database | - | - | - | - | workbench@postgres |
-| highlander_pg polling interval | - | - | - | - | 300ms |
+| Setting | global | gproc | syn | horde | locker | highlander_pg |
+| --- | --- | --- | --- | --- | --- | --- |
+| run started | 2026-08-10T07:08:25Z | 2026-08-10T07:31:55Z | 2026-08-10T07:16:08Z | 2026-08-10T08:01:13Z | 2026-08-10T07:39:42Z | 2026-08-10T07:25:21Z |
+| OTP release | 27 | 27 | 27 | 27 | 27 | 27 |
+| net_ticktime | 5 | 5 | 5 | 5 | 5 | 5 |
+| kernel prevent_overlapping_partitions | true | true | true | true | true | true |
+| registry version | kernel 10.2.7.4 | gproc 1.3.0 | syn 3.4.2 | horde 0.10.0 | locker 6 | highlander_pg 1.0.8 |
+| settle after network change | 15000 | 15000 | 15000 | 15000 | 15000 | 15000 |
+| default lease | 60000 | 60000 | 60000 | 60000 | 60000 | 60000 |
+| action timeout | 20000 | 20000 | 20000 | 20000 | 20000 | 20000 |
+| wait for a pending claim | 3000 | 3000 | 3000 | 3000 | 3000 | 3000 |
+| horde keys | - | - | - | unique | - | - |
+| horde members | - | - | - | auto, the visible nodes | - | - |
+| locker write quorum | - | - | - | - | 2 of 3 masters | - |
+| locker call timeout | - | - | - | - | 5000ms | - |
+| highlander_pg database | - | - | - | - | - | workbench@postgres |
+| highlander_pg polling interval | - | - | - | - | - | 300ms |
 
 ## Summary
 
 Every `lookup on all nodes` step asks all three nodes who owns the name and compares the answers. `agree n/m` counts how many of those checks got the same answer from every node. `owners` is the highest number of different owners seen at the same time, so more than one means the cluster had a split brain. `refused` counts the actions the registry answered `{error, Reason}` to, such as a second claim on a name that is already owned; `timed out` counts the ones it did not answer at all.
 
-| Scenario | global | gproc | syn | locker | highlander_pg |
-| --- | --- | --- | --- | --- | --- |
-| baseline | agree 3/3, 1 owner, 1 refused | agree 3/3, 1 owner, 1 refused | agree 3/3, 1 owner, 1 refused | agree 3/3, 1 owner, 1 refused | agree 1/3, 1 owner |
-| process death | agree 3/3, 1 owner | agree 3/3, 1 owner | agree 3/3, 1 owner | agree 3/3, 1 owner, 1 refused | agree 1/3, 1 owner |
-| lease expiry | agree 3/3, 1 owner, 1 refused | agree 3/3, 1 owner, 1 refused | agree 3/3, 1 owner, 1 refused | agree 3/3, 1 owner | agree 0/3, 1 owner |
-| symmetric split | agree 2/4, 2 owners | agree 2/4, 2 owners | agree 2/4, 2 owners | agree 4/4, 1 owner, 1 refused | agree 0/4, 1 owner |
-| owner isolated | agree 2/4, 2 owners | agree 2/4, 2 owners | agree 2/4, 2 owners | agree 4/4, 1 owner, 1 refused | agree 0/4, 1 owner |
-| one sided split | agree 2/4, 2 owners | agree 3/4, 2 owners | agree 2/4, 2 owners | agree 4/4, 1 owner, 1 refused | agree 0/4, 1 owner |
-| full split | agree 2/4, 3 owners | agree 2/4, 3 owners | agree 2/4, 3 owners | agree 4/4, 1 owner, 2 refused | agree 0/4, 1 owner |
-| database lost | agree 4/4, 1 owner, 1 refused | agree 0/4, 1 owner, 1 refused | agree 4/4, 1 owner, 1 refused | agree 4/4, 1 owner, 1 refused | agree 0/4, 1 owner |
+| Scenario | global | gproc | syn | horde | locker | highlander_pg |
+| --- | --- | --- | --- | --- | --- | --- |
+| baseline | agree 3/3, 1 owner, 1 refused | agree 3/3, 1 owner, 1 refused | agree 3/3, 1 owner, 1 refused | agree 0/3, 2 owners | agree 3/3, 1 owner, 1 refused | agree 1/3, 1 owner |
+| process death | agree 3/3, 1 owner | agree 3/3, 1 owner | agree 3/3, 1 owner | agree 1/3, 1 owner | agree 3/3, 1 owner, 1 refused | agree 1/3, 1 owner |
+| lease expiry | agree 3/3, 1 owner, 1 refused | agree 3/3, 1 owner, 1 refused | agree 3/3, 1 owner, 1 refused | agree 1/3, 2 owners | agree 3/3, 1 owner | agree 0/3, 1 owner |
+| symmetric split | agree 2/4, 2 owners | agree 2/4, 2 owners | agree 2/4, 2 owners | agree 1/4, 2 owners | agree 4/4, 1 owner, 1 refused | agree 0/4, 1 owner |
+| owner isolated | agree 2/4, 2 owners | agree 2/4, 2 owners | agree 2/4, 2 owners | agree 1/4, 2 owners | agree 4/4, 1 owner, 1 refused | agree 0/4, 1 owner |
+| one sided split | agree 2/4, 2 owners | agree 3/4, 2 owners | agree 2/4, 2 owners | agree 1/4, 2 owners | agree 4/4, 1 owner, 1 refused | agree 0/4, 1 owner |
+| full split | agree 2/4, 3 owners | agree 2/4, 3 owners | agree 2/4, 3 owners | agree 1/4, 3 owners | agree 4/4, 1 owner, 2 refused | agree 0/4, 1 owner |
+| database lost | agree 4/4, 1 owner, 1 refused | agree 0/4, 1 owner, 1 refused | agree 4/4, 1 owner, 1 refused | agree 4/4, 1 owner | agree 4/4, 1 owner, 1 refused | agree 0/4, 1 owner |
 
 ## Observations
 
-| Question | global | gproc | syn | locker | highlander_pg |
-| --- | --- | --- | --- | --- | --- |
-| Are leases supported? | no | no | no | yes | no |
-| Slowest single action | 6ms | 5001ms | 7ms | 7015ms | 3098ms |
-| Claims the registry refused | 3 | 3 | 3 | 8 | 0 |
-| Actions that timed out or crashed | 0 | 0 | 0 | 0 | 0 |
-| Checks where the nodes disagreed | 8 | 11 | 8 | 0 | 27 |
-| Highest number of owners at the same time | 3 | 3 | 3 | 1 | 1 |
+| Question | global | gproc | syn | horde | locker | highlander_pg |
+| --- | --- | --- | --- | --- | --- | --- |
+| Are leases supported? | no | no | no | no | yes | no |
+| Slowest single action | 6ms | 5001ms | 7ms | 9ms | 7015ms | 3098ms |
+| Claims the registry refused | 3 | 3 | 3 | 0 | 8 | 0 |
+| Actions that timed out or crashed | 0 | 0 | 0 | 0 | 0 | 0 |
+| Checks where the nodes disagreed | 8 | 11 | 8 | 19 | 0 | 27 |
+| Highest number of owners at the same time | 3 | 3 | 3 | 3 | 1 | 1 |
 
 ## Actions
 
@@ -509,6 +511,155 @@ The node owning the name loses its connection to Postgres while the BEAM cluster
 | 12 | **heal the network** |  |  |  |
 | 13 | wait 15000ms for the registry to react |  |  |  |
 | 14 | `lookup` on all nodes (database_lost/service) - **agree** | `node1/d5ad0f` | `node1/d5ad0f` | `node1/d5ad0f` |
+
+### horde
+
+#### baseline
+
+Healthy cluster. Establishes what the registry does when nothing is wrong: a name is visible everywhere, a second claim is refused, and the name is free again after an orderly stop.
+
+| # | Step | n1 | n2 | n3 |
+| --- | --- | --- | --- | --- |
+| 1 | `start_process` on n1 (baseline/service) | started `node1/cd48d4` |  |  |
+| 2 | `lookup` on all nodes (baseline/service) - **disagree** | `node1/cd48d4` | `not_found` | `not_found` |
+| 3 | _A second node claims the same name._ |  |  |  |
+| 4 | `start_process` on n2 (baseline/service) |  | started `node2/049f95` |  |
+| 5 | `lookup` on all nodes (baseline/service) - **disagree** | `node1/cd48d4` | `node2/049f95` | `not_found` |
+| 6 | `renew_lease` on n2 (baseline/service) |  | `not_supported` |  |
+| 7 | `stop_process` on n1 (baseline/service) | `stopped` |  |  |
+| 8 | `lookup` on all nodes (baseline/service) - **disagree** | `not_found` | `node2/049f95` | `not_found` |
+
+#### process death
+
+The registered process is killed without unregistering. Shows whether the registry monitors the process and frees the name by itself, or keeps handing out a dead pid.
+
+| # | Step | n1 | n2 | n3 |
+| --- | --- | --- | --- | --- |
+| 1 | `start_process` on n1 (process_death/service) | started `node1/0bc2d0` |  |  |
+| 2 | `lookup` on all nodes (process_death/service) - **disagree** | `node1/0bc2d0` | `not_found` | `not_found` |
+| 3 | `kill_process` on n1 (process_death/service) | `killed` |  |  |
+| 4 | wait 2000ms |  |  |  |
+| 5 | `lookup` on all nodes (process_death/service) - **agree** | `not_found` | `not_found` | `not_found` |
+| 6 | _Another node tries to take the name over._ |  |  |  |
+| 7 | `start_process` on n2 (process_death/service) |  | started `node2/ea654a` |  |
+| 8 | `lookup` on all nodes (process_death/service) - **disagree** | `not_found` | `node2/ea654a` | `not_found` |
+
+#### lease expiry
+
+The lease is shortened to 3s and then nobody renews it. Registries without leases keep the name forever; a lease based registry drops it and lets another node take over.
+
+| # | Step | n1 | n2 | n3 |
+| --- | --- | --- | --- | --- |
+| 1 | set lease_ms to 3000 |  |  |  |
+| 2 | `start_process` on n1 (lease_expiry/service) | started `node1/aaf1a3` |  |  |
+| 3 | `lookup` on all nodes (lease_expiry/service) - **disagree** | `node1/aaf1a3` | `not_found` | `not_found` |
+| 4 | `renew_lease` on n1 (lease_expiry/service) | `not_supported` |  |  |
+| 5 | _Wait past the lease without renewing._ |  |  |  |
+| 6 | wait 6000ms |  |  |  |
+| 7 | `lookup` on all nodes (lease_expiry/service) - **agree** | `node1/aaf1a3` | `node1/aaf1a3` | `node1/aaf1a3` |
+| 8 | _Another node tries to take the name over._ |  |  |  |
+| 9 | `start_process` on n2 (lease_expiry/service) |  | started `node2/afedf4` |  |
+| 10 | `lookup` on all nodes (lease_expiry/service) - **disagree** | `node1/aaf1a3` | `node2/afedf4` | `node1/aaf1a3` |
+
+#### symmetric split
+
+The cluster splits into a majority (n1, n2) and a minority (n3). The owner is on the majority side. The minority tries to claim the same name, then the split is healed.
+
+| # | Step | n1 | n2 | n3 |
+| --- | --- | --- | --- | --- |
+| 1 | `start_process` on n1 (symmetric_split/service) | started `node1/0224f6` |  |  |
+| 2 | `lookup` on all nodes (symmetric_split/service) - **disagree** | `node1/0224f6` | `not_found` | `not_found` |
+| 3 | **isolate n3** |  |  |  |
+| 4 | wait 15000ms for the registry to react |  |  |  |
+| 5 | `lookup` on all nodes (symmetric_split/service) - **disagree** | `node1/0224f6` | `node1/0224f6` | `not_found` |
+| 6 | _The minority side claims the same name._ |  |  |  |
+| 7 | `start_process` on n3 (symmetric_split/service) |  |  | started `node3/ceb9b1` |
+| 8 | `lookup` on all nodes (symmetric_split/service) - **disagree** | `node1/0224f6` | `node1/0224f6` | `node3/ceb9b1` |
+| 9 | `renew_lease` on n1 (symmetric_split/service) | `not_supported` |  |  |
+| 10 | **heal the network** |  |  |  |
+| 11 | wait 15000ms for the registry to react |  |  |  |
+| 12 | _After healing: does the cluster agree again?_ |  |  |  |
+| 13 | `lookup` on all nodes (symmetric_split/service) - **agree** | `node3/ceb9b1` | `node3/ceb9b1` | `node3/ceb9b1` |
+
+#### owner isolated
+
+The node owning the name (n3) is cut off from the majority. This is the failover case: can the majority take the name over, and what happens to the old owner when the split heals?
+
+| # | Step | n1 | n2 | n3 |
+| --- | --- | --- | --- | --- |
+| 1 | `start_process` on n3 (owner_isolated/service) |  |  | started `node3/344333` |
+| 2 | `lookup` on all nodes (owner_isolated/service) - **disagree** | `not_found` | `not_found` | `node3/344333` |
+| 3 | **isolate n3** |  |  |  |
+| 4 | wait 15000ms for the registry to react |  |  |  |
+| 5 | `lookup` on all nodes (owner_isolated/service) - **disagree** | `not_found` | `not_found` | `node3/344333` |
+| 6 | _The majority side tries to take the name over._ |  |  |  |
+| 7 | `start_process` on n1 (owner_isolated/service) | started `node1/3f210a` |  |  |
+| 8 | `lookup` on all nodes (owner_isolated/service) - **disagree** | `node1/3f210a` | `not_found` | `node3/344333` |
+| 9 | **heal the network** |  |  |  |
+| 10 | wait 15000ms for the registry to react |  |  |  |
+| 11 | _After healing: one owner, or two?_ |  |  |  |
+| 12 | `lookup` on all nodes (owner_isolated/service) - **agree** | `node1/3f210a` | `node1/3f210a` | `node1/3f210a` |
+
+#### one sided split
+
+n1 stops hearing from n3, but n3 still hears n1. The two nodes disagree about whether the other one is alive, which is the case that breaks membership algorithms assuming symmetric failures.
+
+| # | Step | n1 | n2 | n3 |
+| --- | --- | --- | --- | --- |
+| 1 | `start_process` on n1 (one_sided_split/service) | started `node1/3d52ab` |  |  |
+| 2 | `lookup` on all nodes (one_sided_split/service) - **disagree** | `node1/3d52ab` | `not_found` | `not_found` |
+| 3 | **cut n1 <- n3** (one sided: n3 still hears n1) |  |  |  |
+| 4 | wait 15000ms for the registry to react |  |  |  |
+| 5 | `lookup` on all nodes (one_sided_split/service) - **disagree** | `node1/3d52ab` | `not_found` | `not_found` |
+| 6 | _n3 claims the same name while it still believes n1 is up._ |  |  |  |
+| 7 | `start_process` on n3 (one_sided_split/service) |  |  | started `node3/2a4164` |
+| 8 | `lookup` on all nodes (one_sided_split/service) - **disagree** | `node1/3d52ab` | `not_found` | `node3/2a4164` |
+| 9 | **heal the network** |  |  |  |
+| 10 | wait 15000ms for the registry to react |  |  |  |
+| 11 | `lookup` on all nodes (one_sided_split/service) - **agree** | `not_found` | `not_found` | `not_found` |
+
+#### full split
+
+Every node is cut off from every other node, so nobody has a majority. All three then try to own the same name at the same time, and the split is healed with three candidate owners.
+
+| # | Step | n1 | n2 | n3 |
+| --- | --- | --- | --- | --- |
+| 1 | `start_process` on n1 (full_split/service) | started `node1/7f314b` |  |  |
+| 2 | `lookup` on all nodes (full_split/service) - **disagree** | `node1/7f314b` | `not_found` | `not_found` |
+| 3 | **cut n1 <-> n2** |  |  |  |
+| 4 | **cut n1 <-> n3** |  |  |  |
+| 5 | **cut n2 <-> n3** |  |  |  |
+| 6 | wait 15000ms for the registry to react |  |  |  |
+| 7 | `lookup` on all nodes (full_split/service) - **disagree** | `node1/7f314b` | `not_found` | `not_found` |
+| 8 | _Both other nodes claim the name as well._ |  |  |  |
+| 9 | `start_process` on n2 (full_split/service) |  | started `node2/6c1312` |  |
+| 10 | `start_process` on n3 (full_split/service) |  |  | started `node3/d42bc3` |
+| 11 | `lookup` on all nodes (full_split/service) - **disagree** | `node1/7f314b` | `node2/6c1312` | `node3/d42bc3` |
+| 12 | **heal the network** |  |  |  |
+| 13 | wait 15000ms for the registry to react |  |  |  |
+| 14 | _After healing: how many owners survive?_ |  |  |  |
+| 15 | `lookup` on all nodes (full_split/service) - **agree** | `node3/d42bc3` | `node3/d42bc3` | `node3/d42bc3` |
+
+#### database lost
+
+The node owning the name loses its connection to Postgres while the BEAM cluster stays intact. Only matters for a registry that keeps its state in the database; for the others nothing happens, which is itself the result.
+
+| # | Step | n1 | n2 | n3 |
+| --- | --- | --- | --- | --- |
+| 1 | `start_process` on n1 (database_lost/service) | started `node1/4661db` |  |  |
+| 2 | wait 15000ms for the registry to react |  |  |  |
+| 3 | `lookup` on all nodes (database_lost/service) - **agree** | `node1/4661db` | `node1/4661db` | `node1/4661db` |
+| 4 | _n1 can still reach the other nodes, but not the database._ |  |  |  |
+| 5 | **cut n1 <- postgres** |  |  |  |
+| 6 | wait 15000ms for the registry to react |  |  |  |
+| 7 | `lookup` on all nodes (database_lost/service) - **agree** | `node1/4661db` | `node1/4661db` | `node1/4661db` |
+| 8 | _Does another node take the name over?_ |  |  |  |
+| 9 | `start_process` on n2 (database_lost/service) |  | started `node2/3a7f4c` |  |
+| 10 | wait 15000ms for the registry to react |  |  |  |
+| 11 | `lookup` on all nodes (database_lost/service) - **agree** | `node2/3a7f4c` | `node2/3a7f4c` | `node2/3a7f4c` |
+| 12 | **heal the network** |  |  |  |
+| 13 | wait 15000ms for the registry to react |  |  |  |
+| 14 | `lookup` on all nodes (database_lost/service) - **agree** | `node2/3a7f4c` | `node2/3a7f4c` | `node2/3a7f4c` |
 
 ### locker
 

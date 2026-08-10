@@ -62,7 +62,7 @@
 %% The registries under evaluation, in report order.
 -spec names() -> [atom()].
 names() ->
-    [global, gproc, syn, locker, highlander_pg].
+    [global, gproc, syn, horde, locker, highlander_pg].
 
 -spec adapters() -> #{atom() => module()}.
 adapters() ->
@@ -70,6 +70,7 @@ adapters() ->
         global => registry_global,
         gproc => registry_gproc,
         syn => registry_syn,
+        horde => registry_horde,
         locker => registry_locker,
         highlander_pg => registry_highlander_pg
     }.
