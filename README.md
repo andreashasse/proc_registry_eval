@@ -89,6 +89,14 @@ kept separate, in
   majority claiming the name on n1, `global` and `syn` kept the majority's
   process; `gproc`, `horde` and `group` kept n3's and discarded the
   majority's.
+* **`global`'s tie-break is not random, whatever it is called.** The
+  default resolver is `global:random_exit_name/3`, documented as randomly
+  selecting one of the two pids and killing the other. It is `minmax/2`:
+  the survivor is the process on the node whose *name sorts first*, every
+  time. n1 beat n3 above because `workbench@node1 < workbench@node3` and
+  for no other reason, so read every `global` tie-break here as a
+  statement about node names rather than about majorities. Checked against
+  kernel 10.2.7 as shipped with OTP 27.
 * **`horde` never refuses anything.** It is the only registry that accepted
   every claim: registration is a local CRDT write, so a second node
   claiming a name that is already taken succeeds, and the duplicate is
@@ -137,10 +145,15 @@ kept separate, in
 
 Not from the recorded run. While the node addition scenarios were being
 written they were checked against `global`, `gproc`, `syn` and `locker`,
-one run each on a shortened settle, so read these as things to look at when
-the report is regenerated rather than as results. `global` and `syn` did
-what you would hope: the newcomer saw the name that was already registered
-and was refused it. The other two were more interesting.
+one run each on a shortened settle, and CI runs them against `global` and
+`highlander_pg` on every push and uploads the report as an artifact. Read
+these as things to look at when `results/RESULTS.md` is regenerated rather
+than as results. `global` and `syn` did what you would hope: the newcomer
+saw the name that was already registered and was refused it.
+`highlander_pg` did nothing new either, which is the right answer for a
+registry whose cluster is a database: the newcomer's claim on an owned
+name sat `pending` and never won, and a name it claimed for itself was
+visible on itself and nowhere else. The rest were more interesting.
 
 * **`locker` does not backfill a node that joins.** The new master answers
   `not_found` for a key registered before it arrived, while the other three
@@ -155,6 +168,13 @@ and was refused it. The other two were more interesting.
   the seven second block a claim gets when it cannot reach a quorum; the
   other masters were reachable and voted no, because they hold the key.
   Same `{error, no_quorum}` either way, which is the sharp edge below.
+* **A newcomer is what makes `global`'s tie-break visible.** In `node
+  added during a split` the newcomer on the majority side claimed the name
+  and the heal threw its process away for the isolated n1's, which looks
+  like the opposite of the `owner isolated` result until you notice that
+  `workbench@node1` sorts before `workbench@node4` too. It is the first
+  scenario where sorting first and registering later disagree, and sorting
+  first won.
 * **`gproc` accepted a node its candidate list had never heard of.** The
   candidate list is fixed before `gproc_dist` starts, and the three nodes
   already running were started with a list of three, so the fourth should
