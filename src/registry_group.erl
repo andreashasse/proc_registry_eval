@@ -19,6 +19,7 @@
 -behaviour(registry).
 
 -export([setup/1, child_specs/0, on_cluster_ready/1, settings/0, application/0]).
+-export([teardown/0]).
 -export([cleanup/0, frees_name_on_exit/0]).
 -export([claim/1, whereis_name/1, unregister_name/1, renew_lease/2]).
 
@@ -43,8 +44,14 @@ child_specs() ->
 
 -spec on_cluster_ready([node()]) -> ok.
 on_cluster_ready(_Peers) ->
-    %% The default cluster is whatever nodes are connected.
+    %% The default cluster is whatever nodes are connected, so an added
+    %% node joins it by connecting.
     ok.
+
+-spec teardown() -> ok.
+teardown() ->
+    %% The Group supervisor is a child of workbench_sup and is already gone.
+    registry:stop_application(group).
 
 -spec cleanup() -> ok.
 cleanup() ->

@@ -1,6 +1,8 @@
 name: proc-registry-eval
 
-# All three cluster nodes are identical apart from their hostname.
+# All five nodes are identical apart from their hostname. The first three
+# form the cluster; node4 and node5 boot idle and outside it, and a
+# scenario adds them with the {join, ...} step.
 x-node: &node
   build: .
   image: proc-registry-eval:latest
@@ -9,7 +11,9 @@ x-node: &node
   cap_add: ["NET_ADMIN"]
   environment: &settings
     REGISTRY: ${REGISTRY:-global}
-    PEERS: node1,node2,node3
+    PEERS: node1,node2,node3,node4,node5
+    # Of the peers, the ones that are not in the cluster to begin with.
+    JOINERS: node4,node5
     SETTLE_MS: ${SETTLE_MS:-15000}
     LEASE_MS: ${LEASE_MS:-60000}
     ACTION_TIMEOUT_MS: ${ACTION_TIMEOUT_MS:-20000}
@@ -40,6 +44,15 @@ services:
   node3:
     <<: *node
     hostname: node3
+
+  # Up, but outside the cluster until a scenario adds it.
+  node4:
+    <<: *node
+    hostname: node4
+
+  node5:
+    <<: *node
+    hostname: node5
 
   # Only highlander_pg uses it, but it is always up so that every run has
   # the same cluster around it.

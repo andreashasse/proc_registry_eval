@@ -1,15 +1,15 @@
-%% Configuration and boot for one workbench node.
+%% Configuration for one workbench node.
 %%
 %% Everything configurable comes from OS environment variables so that a
 %% reader only has to look at docker-compose.yml to know how a node was
-%% started.
+%% started.  Joining and leaving the cluster is workbench_cluster.
 -module(workbench).
 
--export([boot/0]).
--export([registry/0, peers/0, settle_ms/0, action_timeout_ms/0, env/2]).
+-export([registry/0, peers/0, joiners/0, settle_ms/0, action_timeout_ms/0, env/2]).
 -export([database_host/0, claim_settle_ms/0]).
+-export([members/0, set_members/1, reset_members/0]).
 -export([lease_ms/0, set_lease_ms/1, reset_lease_ms/0]).
--export([node_of/1, node_ids/0]).
+-export([node_of/1, id_of/1, node_ids/0, member_ids/0]).
 -export([describe/1]).
 
 % n1 | n2 | n3 ...
@@ -19,51 +19,11 @@
 
 -export_type([node_id/0, key/0, pid_ref/0]).
 
--define(CONNECT_TIMEOUT_MS, 60_000).
 -define(LEASE_KEY, {?MODULE, lease_ms}).
+-define(MEMBERS_KEY, {?MODULE, members}).
 %% Scenarios name nodes n1, n2, n3. Written out rather than built at run
 %% time, so these are the only node ids that exist.
 -define(NODE_IDS, [n1, n2, n3, n4, n5, n6, n7, n8, n9]).
-
-%%%===================================================================
-%%% Boot
-%%%===================================================================
-
-%% Entry point for a cluster node (see docker/entrypoint.sh).
-%%
-%% The peers are connected *before* the registry starts, because gproc and
-%% locker need to know the cluster membership at startup.
--spec boot() -> ok.
-boot() ->
-    Peers = peers(),
-    ok = await_peers(Peers),
-    ok = registry:setup(Peers),
-    {ok, _} = application:ensure_all_started(workbench),
-    io:format(
-        "workbench up on ~p with registry ~p, peers ~p~n",
-        [node(), registry(), nodes()]
-    ),
-    ok.
-
-await_peers(Peers) ->
-    Deadline = erlang:monotonic_time(millisecond) + ?CONNECT_TIMEOUT_MS,
-    await_peers(Peers -- [node()], Deadline).
-
-await_peers([], _Deadline) ->
-    ok;
-await_peers(Missing, Deadline) ->
-    case [P || P <- Missing, net_kernel:connect_node(P) =/= true] of
-        [] ->
-            ok;
-        Still ->
-            case erlang:monotonic_time(millisecond) < Deadline of
-                true ->
-                    timer:sleep(500),
-                    await_peers(Still, Deadline);
-                false ->
-                    error({peers_unreachable, Still})
-            end
-    end.
 
 %%%===================================================================
 %%% Configuration
@@ -78,12 +38,48 @@ registry() ->
         [] -> error({unknown_registry, Name, registry:names()})
     end.
 
-%% All cluster nodes, in the order that defines n1, n2, n3.
+%% Every node in docker-compose.yml, in the order that defines n1, n2, n3.
+%% Not the same as members/0: the joiners are listed here but start
+%% outside the cluster.
 -spec peers() -> [node()].
 peers() ->
+    nodes_named(env("PEERS", "")).
+
+%% The nodes that boot idle, outside the cluster, until a scenario adds
+%% them with the `{join, Node}' step. They exist so that a run can measure
+%% what a registry does when the cluster grows: a node that was a member
+%% all along and one that has just been added are not the same thing.
+-spec joiners() -> [node()].
+joiners() ->
+    Joiners = nodes_named(env("JOINERS", "")),
+    case Joiners -- peers() of
+        [] -> Joiners;
+        Unknown -> error({joiners_not_in_peers, Unknown})
+    end.
+
+%% The cluster this node belongs to right now.
+%%
+%% Every node but the joiners starts as a member; a joiner is told the
+%% membership it is joining, and every member is told when it changes, so
+%% a registry that has to be configured with the cluster can be.
+-spec members() -> [node()].
+members() ->
+    persistent_term:get(?MEMBERS_KEY, peers() -- joiners()).
+
+-spec set_members([node()]) -> ok.
+set_members(Members) ->
+    persistent_term:put(?MEMBERS_KEY, Members).
+
+-spec reset_members() -> ok.
+reset_members() ->
+    _ = persistent_term:erase(?MEMBERS_KEY),
+    ok.
+
+-spec nodes_named(string()) -> [node()].
+nodes_named(Hosts) ->
     %% A node name has to be an atom, and PEERS is fixed by docker-compose.yml.
     % elp:ignore W0023
-    [list_to_atom("workbench@" ++ Host) || Host <- string:lexemes(env("PEERS", ""), ",")].
+    [list_to_atom("workbench@" ++ Host) || Host <- string:lexemes(Hosts, ",")].
 
 %% How long to wait for a registry to react to a network change.
 -spec settle_ms() -> pos_integer().
@@ -148,9 +144,20 @@ env(Name, Default) ->
 node_of(NodeId) ->
     lists:nth(index(NodeId), peers()).
 
+-spec id_of(node()) -> node_id().
+id_of(Node) ->
+    {Index, Node} = lists:keyfind(Node, 2, lists:enumerate(peers())),
+    lists:nth(Index, ?NODE_IDS).
+
+%% Every node id, joiners included.
 -spec node_ids() -> [node_id()].
 node_ids() ->
     lists:sublist(?NODE_IDS, length(peers())).
+
+%% The ids of the nodes that are in the cluster right now.
+-spec member_ids() -> [node_id()].
+member_ids() ->
+    [id_of(Node) || Node <- members()].
 
 -spec index(node_id()) -> pos_integer().
 index(NodeId) ->

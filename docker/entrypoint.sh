@@ -17,8 +17,9 @@ erl_node() {
 case "${1:-}" in
     node)
         # A cluster node. Its name is workbench@<container hostname>, which
-        # is what the PEERS environment variable lists.
-        erl_node -sname "workbench@$(hostname)" -eval "workbench:boot()"
+        # is what the PEERS environment variable lists. A node named in
+        # JOINERS starts idle instead, and waits to be added.
+        erl_node -sname "workbench@$(hostname)" -eval "workbench_cluster:boot()"
         ;;
     scenarios)
         # The controller. Hidden, so it takes no part in the registries it

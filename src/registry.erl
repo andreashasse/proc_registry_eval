@@ -6,6 +6,7 @@
 
 -export([names/0, adapters/0, adapter/0]).
 -export([setup/1, child_specs/0, on_cluster_ready/1, settings/0, application/0]).
+-export([teardown/0, stop_application/1]).
 -export([cleanup/0, frees_name_on_exit/0]).
 -export([claim/1, discard/2, whereis_name/1, unregister_name/1, renew_lease/2]).
 
@@ -19,9 +20,18 @@
 %% Long lived processes the registry needs, supervised by workbench_sup.
 -callback child_specs() -> [supervisor:child_spec()].
 
-%% Called once after every node has booted, for registries that need to be
-%% told the cluster membership explicitly.
+%% Called after every node has booted, and again whenever a node is added
+%% to the cluster, for registries that need to be told the membership
+%% explicitly.  Has to be idempotent: every node runs it every time.
 -callback on_cluster_ready(Peers :: [node()]) -> ok.
+
+%% The mirror of setup/1: stop the registry on this node so that nothing
+%% it was holding survives.  Called when a node leaves the cluster, which
+%% is how a node that a scenario added is put back outside it.
+%%
+%% Anything started from child_specs/0 is already gone by then, because
+%% the workbench application is stopped first.
+-callback teardown() -> ok.
 
 %% Does the registry give the name back by itself when the owner dies?
 %% locker does not: it holds the key until the lease expires, so a process
@@ -92,6 +102,15 @@ child_specs() -> (adapter()):child_specs().
 
 -spec on_cluster_ready([node()]) -> ok.
 on_cluster_ready(Peers) -> (adapter()):on_cluster_ready(Peers).
+
+-spec teardown() -> ok.
+teardown() -> (adapter()):teardown().
+
+%% Stop an application whether or not it is running, for teardown/0.
+-spec stop_application(atom()) -> ok.
+stop_application(Application) ->
+    _ = application:stop(Application),
+    ok.
 
 -spec settings() -> [{binary(), binary()}].
 settings() -> (adapter()):settings().

@@ -23,6 +23,7 @@
 -behaviour(registry).
 
 -export([setup/1, child_specs/0, on_cluster_ready/1, settings/0, application/0]).
+-export([teardown/0]).
 -export([cleanup/0, frees_name_on_exit/0]).
 -export([claim/1, whereis_name/1, unregister_name/1, renew_lease/2]).
 
@@ -53,8 +54,16 @@ child_specs() ->
 cleanup() ->
     workbench_contenders:stop_all().
 
+%% Nothing to tell it: the cluster it cares about is the set of sessions
+%% polling Postgres, so a node is added to it by starting a contender.
 -spec on_cluster_ready([node()]) -> ok.
 on_cluster_ready(_Peers) ->
+    ok.
+
+-spec teardown() -> ok.
+teardown() ->
+    %% The contenders are children of workbench_sup and are already gone,
+    %% which closed their Postgres sessions and freed their locks.
     ok.
 
 -spec frees_name_on_exit() -> boolean().

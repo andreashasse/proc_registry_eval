@@ -7,6 +7,7 @@
 -behaviour(registry).
 
 -export([setup/1, child_specs/0, on_cluster_ready/1, settings/0, application/0]).
+-export([teardown/0]).
 -export([cleanup/0, frees_name_on_exit/0]).
 -export([claim/1, whereis_name/1, unregister_name/1, renew_lease/2]).
 
@@ -22,9 +23,16 @@ setup(Peers) ->
 child_specs() ->
     [].
 
+%% There is nothing to tell gproc: the candidate list is read when
+%% gproc_dist starts and cannot be changed afterwards, which is why a node
+%% added to a running cluster is a leader group of its own.
 -spec on_cluster_ready([node()]) -> ok.
 on_cluster_ready(_Peers) ->
     ok.
+
+-spec teardown() -> ok.
+teardown() ->
+    registry:stop_application(gproc).
 
 %% gproc signals a name that is already taken by raising `badarg', the same
 %% way it signals a malformed key, so the reason is passed through as is.

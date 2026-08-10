@@ -13,10 +13,17 @@ render_test_() ->
             ?_assert(contains(Markdown, <<"# Distributed process registry">>))},
         {"names the registry", ?_assert(contains(Markdown, <<"syn">>))},
         {"says when it ran", ?_assert(contains(Markdown, <<"2026-08-09T12:00:00Z">>))},
-        {"has a column per node", ?_assert(contains(Markdown, <<"| n1 | n2 | n3 |">>))},
+        {"has a column per node",
+            ?_assert(contains(Markdown, <<"| n1 | n2 | n3 | n4 |">>))},
         {"shows who owns the name", ?_assert(contains(Markdown, <<"`node1/aaaaaa`">>))},
         {"flags disagreement", ?_assert(contains(Markdown, <<"**disagree**">>))},
         {"describes the partition", ?_assert(contains(Markdown, <<"**isolate n3**">>))},
+        {"describes a node being added",
+            ?_assert(
+                contains(Markdown, <<"**n4 joins the cluster** (now n1, n2, n3, n4)">>)
+            )},
+        {"says who the new node reached",
+            ?_assert(contains(Markdown, <<"connected to n1, n2, n3">>))},
         {"keeps the note", ?_assert(contains(Markdown, <<"_something happened_">>))},
         {"counts the checks", ?_assert(contains(Markdown, <<"agree 0/1">>))},
         {"counts the owners", ?_assert(contains(Markdown, <<"2 owners">>))},
@@ -106,6 +113,14 @@ scenario(Result) ->
                     agreement => disagree
                 },
                 #{kind => network, detail => {isolate, n3}},
+                #{
+                    kind => membership,
+                    detail => {join, n4},
+                    node => n4,
+                    members => [n1, n2, n3, n4],
+                    result => {joined, [n1, n2, n3]},
+                    ms => 120
+                },
                 #{kind => network, detail => heal},
                 #{kind => wait, ms => 15000, reason => settle},
                 #{kind => config, setting => lease_ms, value => 3000}

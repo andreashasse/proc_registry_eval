@@ -50,10 +50,11 @@ render(Runs) ->
 intro(Runs) ->
     [
         para([
-            <<"A three node Erlang cluster in docker. The network between the ">>,
-            <<"nodes is cut and healed with iptables while a fixed list of ">>,
-            <<"actions is run against each registry, and every answer every ">>,
-            <<"node gives is written down.">>
+            <<"A three node Erlang cluster in docker, with two more nodes ">>,
+            <<"waiting outside it. The network between the nodes is cut and ">>,
+            <<"healed with iptables, nodes are added to the cluster, and a ">>,
+            <<"fixed list of actions is run against each registry while that ">>,
+            <<"happens. Every answer every node gives is written down.">>
         ]),
         para([
             <<"Registries in this run: ">>,
@@ -93,8 +94,10 @@ summary_section(Runs) ->
     [
         heading(2, <<"Summary">>),
         para([
-            <<"Every `lookup on all nodes` step asks all three nodes who owns ">>,
-            <<"the name and compares the answers. `agree n/m` counts how many ">>,
+            <<"Every `lookup on all nodes` step asks every node in the ">>,
+            <<"cluster who owns the name and compares the answers, so a ">>,
+            <<"scenario that adds a node asks more nodes than one that does ">>,
+            <<"not. `agree n/m` counts how many ">>,
             <<"of those checks got the same answer from every node. `owners` is ">>,
             <<"the highest number of different owners seen at the same time, so ">>,
             <<"more than one means the cluster had a split brain. `refused` ">>,
@@ -242,6 +245,14 @@ step_label(#{kind := action_all, action := Action, key := Key, agreement := Agre
     ];
 step_label(#{kind := network, detail := Detail}) ->
     network_label(Detail);
+step_label(#{kind := membership, detail := {join, NodeId}, members := Members}) ->
+    [
+        <<"**">>,
+        fmt:text(NodeId),
+        <<" joins the cluster** (now ">>,
+        join([fmt:text(Member) || Member <- Members], <<", ">>),
+        <<")">>
+    ];
 step_label(#{kind := wait, ms := Ms, reason := settle}) ->
     [<<"wait ">>, fmt:text(Ms), <<"ms for the registry to react">>];
 step_label(#{kind := wait, ms := Ms}) ->
@@ -271,8 +282,10 @@ network_label({isolate, NodeId}) ->
 network_label(heal) ->
     <<"**heal the network**">>.
 
+%% Anything that happened on one node goes in that node's column, whether
+%% it was an action or the node being added to the cluster.
 -spec node_cells(outcome(), [workbench:node_id()]) -> [cell()].
-node_cells(#{kind := action, node := NodeId, result := Result, ms := Ms}, NodeIds) ->
+node_cells(#{node := NodeId, result := Result, ms := Ms}, NodeIds) ->
     [
         case Id of
             NodeId -> format_result(Result, Ms);
@@ -298,11 +311,20 @@ format_result(Result, _Ms) ->
     format_result(Result).
 
 -spec format_result(term()) -> cell().
-format_result({started, Ref}) -> [<<"started ">>, owner(Ref)];
-format_result({found, Ref}) -> owner(Ref);
-format_result({error, Reason}) -> [<<"error: `">>, fmt:text(Reason), <<"`">>];
-format_result({rpc_error, Reason}) -> [<<"rpc error: `">>, fmt:text(Reason), <<"`">>];
-format_result(Other) -> [<<"`">>, fmt:text(Other), <<"`">>].
+format_result({joined, []}) ->
+    <<"reached no other node">>;
+format_result({joined, NodeIds}) when is_list(NodeIds) ->
+    [<<"connected to ">>, join([fmt:text(NodeId) || NodeId <- NodeIds], <<", ">>)];
+format_result({started, Ref}) ->
+    [<<"started ">>, owner(Ref)];
+format_result({found, Ref}) ->
+    owner(Ref);
+format_result({error, Reason}) ->
+    [<<"error: `">>, fmt:text(Reason), <<"`">>];
+format_result({rpc_error, Reason}) ->
+    [<<"rpc error: `">>, fmt:text(Reason), <<"`">>];
+format_result(Other) ->
+    [<<"`">>, fmt:text(Other), <<"`">>].
 
 -spec owner(term()) -> cell().
 owner(#{node := Node, id := Id}) ->
@@ -346,15 +368,24 @@ find_scenario(Run, Module) ->
 -spec scenario_name(module()) -> binary().
 scenario_name(Module) -> fmt:text(Module:name()).
 
-%% The columns the detail tables need, taken from the data itself.
+%% The columns the detail tables need, taken from the data itself. Nodes
+%% that were added to the cluster come last, because they only show up in
+%% the scenarios that added them.
 -spec node_ids(run()) -> [workbench:node_id()].
 node_ids(Run) ->
-    unique([
-        NodeId
-     || Scenario <- scenarios(Run),
-        #{kind := action_all, results := Results} <- log(Scenario),
-        {NodeId, _Result, _Ms} <- Results
-    ]).
+    unique(
+        [
+            NodeId
+         || Scenario <- scenarios(Run),
+            #{kind := action_all, results := Results} <- log(Scenario),
+            {NodeId, _Result, _Ms} <- Results
+        ] ++
+            [
+                NodeId
+             || Scenario <- scenarios(Run),
+                #{kind := membership, node := NodeId} <- log(Scenario)
+            ]
+    ).
 
 %% How many different owners the cluster reported at the same time.
 -spec owner_count(outcome()) -> non_neg_integer().
