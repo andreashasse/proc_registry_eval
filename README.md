@@ -349,7 +349,9 @@ that did not recover from the three way split in this run is that library.
 **`locker` was last released in 2015**, and this repository deliberately
 does not use that release. It is on hex as 1.0.8 (2015-10-16), but
 `rebar.config` pins the git ref `cf92412` from two months later, because of
-a fix that never made it into a release: when a lease expires, 1.0.8
+a fix that was merged and never released
+([wooga/locker#10](https://github.com/wooga/locker/pull/10)): when a lease
+expires, 1.0.8
 deletes the key unconditionally, while the git version first checks that
 the expiry entry still matches the current lease. `locker_expire_db` can
 drift out of sync with `locker_db`, and without that check a stale expiry
