@@ -107,7 +107,9 @@ one run per registry, 8 scenarios, 29 cluster wide lookups each.
   `{timeout, {gen_leader, leader_call, ...}}` after 5 seconds and only the
   node that already held the name could see it, some 30 seconds after the
   network was healed. Its leader group needed longer to re-elect than the
-  workbench waits, which is where its extra disagreements come from.
+  workbench waits, which is where its extra disagreements come from. That
+  leader election is `gen_leader`, last released in 2016; see
+  [Dependency health](#dependency-health).
 * **`locker` never split-brained.** The minority side is refused with
   `no_quorum` rather than given a second owner, and all 29 lookups agreed.
   It pays with a 7 second block on a write that cannot reach a quorum, and
@@ -318,6 +320,54 @@ image, and the modules that call them are excluded from xref and dialyzer
 because no Erlang tool can see them from here. The tests
 cover the parts that do not need a cluster: the report renderer, the step
 vocabulary, and that every registry and action is wired up.
+
+## Dependency health
+
+Checked on 2026-08-10, and it will go stale. Two things are worth knowing
+before taking any of these into a real system: whether the library is still
+being released, and what it drags in.
+
+| Registry | Last release | Brings in | Advisories |
+| --- | --- | --- | --- |
+| `global` | part of OTP | nothing | none |
+| `gproc` | 2026-07-29 | `gen_leader`, **last released 2016** | none |
+| `syn` | 2026-06-22 | nothing | none |
+| `horde` | 2025-11-03 | `delta_crdt` and `libring`, both last released 2024 | none |
+| `group` | 2026-07-17 | nothing | none |
+| `locker` | **never on hex, last commit 2015-12-14** | nothing | none |
+| `highlander_pg` | 2025-11-04 | `postgrex`, held below the fixed version | **4** |
+
+Three of these deserve a sentence.
+
+**`gproc`'s distributed mode rests on a library last released in 2016.**
+gproc itself is actively maintained, but its global scope is built on
+`gen_leader`, which gproc does not even declare as a dependency: this
+repository adds it explicitly in `rebar.config`, because `gproc_dist` calls
+it at runtime and would fail with `undef` otherwise. The leader election
+that did not recover from the three way split in this run is that library.
+
+**`locker` was last touched in 2015** and has no hex release, so it is
+pinned here by git ref. It still compiles and behaves well under partition,
+but `master_dirty_read/1` calls `random:uniform/1`, a module deprecated
+since OTP 19, and `locker:extend_lease/4` exists without being exported.
+
+**`highlander_pg` is the only one carrying advisories**, all of them
+transitive through `postgrex`, and none of them reachable from here:
+
+| Package | Advisory | Severity |
+| --- | --- | --- |
+| `postgrex 0.21.1` | SQL injection via channel name in `Postgrex.Notifications.listen/3` and `unlisten/3` | HIGH |
+| `postgrex 0.21.1` | SQL injection via the `:comment` option in `Postgrex.stream/4` | MEDIUM |
+| `postgrex 0.21.1` | Dollar-quote in `Postgrex.Notifications` reconnect replay causes notification denial of service | LOW |
+| `decimal 2.4.1` | Unbounded exponent enables unauthenticated DoS | MEDIUM |
+
+They are all fixed upstream, in `postgrex 0.22.4` and `decimal 3.1.1`, and
+neither fix can be taken: `highlander_pg 1.0.8` allows postgrex only up to
+`~> 0.21.0`, and postgrex 0.21.1 in turn allows `decimal ~> 1.5 or ~> 2.0`.
+So the chain is stuck until highlander_pg widens its constraint. In this
+workbench it does not matter, because the database is a throwaway container
+and nothing here calls `Postgrex.Notifications` or `stream/4`, but the
+whole point of writing it down is that it would matter elsewhere.
 
 ## Not included, but worth adding
 
