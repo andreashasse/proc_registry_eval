@@ -334,7 +334,7 @@ being released, and what it drags in.
 | `syn` | 2026-06-22 | nothing | none |
 | `horde` | 2025-11-03 | `delta_crdt` and `libring`, both last released 2024 | none |
 | `group` | 2026-07-17 | nothing | none |
-| `locker` | **never on hex, last commit 2015-12-14** | nothing | none |
+| `locker` | hex 1.0.8, 2015-10-16, **pinned here to a newer git ref** | nothing | none |
 | `highlander_pg` | 2025-11-04 | `postgrex`, held below the fixed version | **4** |
 
 Three of these deserve a sentence.
@@ -346,9 +346,19 @@ repository adds it explicitly in `rebar.config`, because `gproc_dist` calls
 it at runtime and would fail with `undef` otherwise. The leader election
 that did not recover from the three way split in this run is that library.
 
-**`locker` was last touched in 2015** and has no hex release, so it is
-pinned here by git ref. It still compiles and behaves well under partition,
-but `master_dirty_read/1` calls `random:uniform/1`, a module deprecated
+**`locker` was last released in 2015**, and this repository deliberately
+does not use that release. It is on hex as 1.0.8 (2015-10-16), but
+`rebar.config` pins the git ref `cf92412` from two months later, because of
+a fix that never made it into a release: when a lease expires, 1.0.8
+deletes the key unconditionally, while the git version first checks that
+the expiry entry still matches the current lease. `locker_expire_db` can
+drift out of sync with `locker_db`, and without that check a stale expiry
+entry deletes a key whose lease was just renewed, which is exactly the path
+the lease expiry scenario walks.
+
+The git tree also still declares `{vsn, "6"}`, which is why the report's
+version row reads `locker 6` rather than 1.0.8. Two other rough edges:
+`master_dirty_read/1` calls `random:uniform/1`, from a module deprecated
 since OTP 19, and `locker:extend_lease/4` exists without being exported.
 
 **`highlander_pg` is the only one carrying advisories**, all of them
