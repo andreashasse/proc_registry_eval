@@ -497,9 +497,14 @@ table(Header, Rows) ->
 row(Cells) ->
     [<<"| ">>, join([escape(Cell) || Cell <- Cells], <<" | ">>), <<" |\n">>].
 
+%% A cell has to be one line and cannot contain a pipe. `~p' wraps a long
+%% term over several lines, and a stack trace or a registry's list of
+%% names is long, so without this a single result splits the table it sits
+%% in.
 -spec escape(cell()) -> binary().
 escape(Cell) ->
-    binary:replace(fmt:binary(Cell), <<"|">>, <<"\\|">>, [global]).
+    OneLine = re:replace(fmt:binary(Cell), "\\s+", " ", [global, {return, binary}]),
+    binary:replace(OneLine, <<"|">>, <<"\\|">>, [global]).
 
 -spec join([unicode:chardata()], binary()) -> [unicode:chardata()].
 join([], _Separator) -> [];

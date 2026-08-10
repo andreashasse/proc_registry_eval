@@ -48,6 +48,17 @@ slow_actions_are_timed_test() ->
     ?assert(contains(Markdown, <<"_(300ms)_">>)),
     ?assertNot(contains(Markdown, <<"_(1ms)_">>)).
 
+%% `~p' wraps a long term over several lines, and a stack trace is long.
+%% A newline in a cell would split the row it sits in.
+wrapped_terms_stay_on_one_line_test() ->
+    Long = list_to_tuple([
+        {a_long_enough_atom_to_force_wrapping, N}
+     || N <- lists:seq(1, 20)
+    ]),
+    Markdown = render([run_with_result({rpc_error, Long})]),
+    ?assertEqual(equal_columns, columns_are_consistent(Markdown)),
+    ?assertNot(contains(Markdown, <<"\n ">>)).
+
 %% A pipe in a result would otherwise break the table it sits in.
 pipes_are_escaped_test() ->
     Markdown = render([run_with_result({error, <<"a|b">>})]),
