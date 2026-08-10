@@ -20,7 +20,9 @@ for registry in "${registries[@]}"; do
     echo "=== $registry"
     rm -f "results/$registry.result"
     # A fresh cluster per registry, so nothing carries over between them.
-    REGISTRY="$registry" docker compose up -d node1 node2 node3
+    # node4 and node5 start too, but outside the cluster: a scenario adds
+    # them to it.
+    REGISTRY="$registry" docker compose up -d node1 node2 node3 node4 node5
     REGISTRY="$registry" docker compose run --rm controller scenarios
     docker compose down
 done

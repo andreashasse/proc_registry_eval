@@ -6,7 +6,12 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
--define(NODE_IDS, [n1, n2, n3]).
+%% The cluster a scenario starts with, and the nodes it can add to it.
+%% Both are docker-compose.yml's, repeated here so the tests can check a
+%% scenario without a cluster to ask.
+-define(MEMBER_IDS, [n1, n2, n3]).
+-define(JOINER_IDS, [n4, n5]).
+-define(NODE_IDS, ?MEMBER_IDS ++ ?JOINER_IDS).
 
 every_scenario_is_described_test_() ->
     [
@@ -53,9 +58,36 @@ every_cut_is_healed_test_() ->
      || Module <- scenario:all()
     ].
 
+%% A node that has not been added to the cluster is not running the
+%% workbench, so naming one before its `join' step would ask a node that
+%% cannot answer.  Cutting one is fine, and is how a scenario decides
+%% which side of a split a new node lands on.
+a_joiner_is_used_only_once_it_has_joined_test_() ->
+    [
+        {binary_to_list(Module:name()), fun() ->
+            _Members = lists:foldl(fun check_membership/2, ?MEMBER_IDS, Module:steps())
+        end}
+     || Module <- scenario:all()
+    ].
+
 %%%===================================================================
 %%% Helpers
 %%%===================================================================
+
+check_membership({join, NodeId}, Members) ->
+    ?assertNot(lists:member(NodeId, Members)),
+    Members ++ [NodeId];
+check_membership(Step, Members) ->
+    lists:foreach(
+        fun(NodeId) -> ?assert(lists:member(NodeId, Members)) end,
+        acts_on(Step)
+    ),
+    Members.
+
+acts_on({do, NodeId, _Action, _Key}) -> [NodeId];
+acts_on({isolate, NodeId}) -> [NodeId];
+acts_on({cut_db, NodeId}) -> [NodeId];
+acts_on(_Other) -> [].
 
 check_step({note, Text}) ->
     ?assert(is_binary(Text));
@@ -76,6 +108,9 @@ check_step({isolate, NodeId}) ->
     ?assert(lists:member(NodeId, ?NODE_IDS));
 check_step({cut_db, NodeId}) ->
     ?assert(lists:member(NodeId, ?NODE_IDS));
+check_step({join, NodeId}) ->
+    %% Only a node that boots outside the cluster can be added to it.
+    ?assert(lists:member(NodeId, ?JOINER_IDS));
 check_step(heal) ->
     ok;
 check_step(settle) ->

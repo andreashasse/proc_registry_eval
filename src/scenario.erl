@@ -14,10 +14,19 @@
 %%   {cut_db, Node}        Node stops hearing from Postgres. Only one
 %%                         direction, because the database container is not
 %%                         ours to run iptables in
+%%   {join, Node}          Node is added to the cluster. Only the nodes
+%%                         listed in JOINERS can be joined: they boot idle
+%%                         and outside the cluster, so a registry meets
+%%                         them for the first time here. Every member is
+%%                         then told the new membership
 %%   heal                  remove all cuts and reconnect
 %%   settle                wait SETTLE_MS for the registry to react
 %%   {wait, Ms}            wait a specific time
 %%   {lease_ms, Ms}        change the lease length used from here on
+%%
+%% A scenario starts with the cluster the run started with, whatever the
+%% one before it did, so a joined node is put back outside the cluster
+%% afterwards.
 %%
 %% Use a key that is unique to the scenario, so scenarios cannot affect
 %% each other through a registry that kept an old entry.
@@ -33,6 +42,7 @@
     | {cut_one_way, workbench:node_id(), workbench:node_id()}
     | {isolate, workbench:node_id()}
     | {cut_db, workbench:node_id()}
+    | {join, workbench:node_id()}
     | heal
     | settle
     | {wait, pos_integer()}
@@ -54,5 +64,8 @@ all() ->
         scenario_owner_isolated,
         scenario_one_sided_split,
         scenario_full_split,
-        scenario_database_lost
+        scenario_database_lost,
+        scenario_node_added,
+        scenario_node_added_during_split,
+        scenario_cluster_grows
     ].

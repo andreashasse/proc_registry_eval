@@ -13,10 +13,17 @@ render_test_() ->
             ?_assert(contains(Markdown, <<"# Distributed process registry">>))},
         {"names the registry", ?_assert(contains(Markdown, <<"syn">>))},
         {"says when it ran", ?_assert(contains(Markdown, <<"2026-08-09T12:00:00Z">>))},
-        {"has a column per node", ?_assert(contains(Markdown, <<"| n1 | n2 | n3 |">>))},
+        {"has a column per node",
+            ?_assert(contains(Markdown, <<"| n1 | n2 | n3 | n4 |">>))},
         {"shows who owns the name", ?_assert(contains(Markdown, <<"`node1/aaaaaa`">>))},
         {"flags disagreement", ?_assert(contains(Markdown, <<"**disagree**">>))},
         {"describes the partition", ?_assert(contains(Markdown, <<"**isolate n3**">>))},
+        {"describes a node being added",
+            ?_assert(
+                contains(Markdown, <<"**n4 joins the cluster** (now n1, n2, n3, n4)">>)
+            )},
+        {"says who the new node reached",
+            ?_assert(contains(Markdown, <<"connected to n1, n2, n3">>))},
         {"keeps the note", ?_assert(contains(Markdown, <<"_something happened_">>))},
         {"counts the checks", ?_assert(contains(Markdown, <<"agree 0/1">>))},
         {"counts the owners", ?_assert(contains(Markdown, <<"2 owners">>))},
@@ -41,6 +48,17 @@ slow_actions_are_timed_test() ->
     ?assert(contains(Markdown, <<"_(300ms)_">>)),
     ?assertNot(contains(Markdown, <<"_(1ms)_">>)).
 
+%% `~p' wraps a long term over several lines, and a stack trace is long.
+%% A newline in a cell would split the row it sits in.
+wrapped_terms_stay_on_one_line_test() ->
+    Long = list_to_tuple([
+        {a_long_enough_atom_to_force_wrapping, N}
+     || N <- lists:seq(1, 20)
+    ]),
+    Markdown = render([run_with_result({rpc_error, Long})]),
+    ?assertEqual(equal_columns, columns_are_consistent(Markdown)),
+    ?assertNot(contains(Markdown, <<"\n ">>)).
+
 %% A pipe in a result would otherwise break the table it sits in.
 pipes_are_escaped_test() ->
     Markdown = render([run_with_result({error, <<"a|b">>})]),
@@ -51,6 +69,16 @@ registries_become_columns_test() ->
     Markdown = render([run(), maps:put(registry, locker, run())]),
     ?assert(contains(Markdown, <<"| Setting | syn | locker |">>)),
     ?assert(contains(Markdown, <<"| Question | syn | locker |">>)).
+
+%% A node that could not start its registry is not a bigger cluster, and
+%% the report has to say so rather than list it as a member.
+a_failed_join_did_not_grow_the_cluster_test() ->
+    Markdown = render([run_with_failed_join()]),
+    ?assert(
+        contains(Markdown, <<"**n4 does not join the cluster** (still n1, n2, n3)">>)
+    ),
+    ?assertNot(contains(Markdown, <<"joins the cluster">>)),
+    ?assert(contains(Markdown, <<"error: `setup failed`">>)).
 
 %%%===================================================================
 %%% Fixtures
@@ -106,11 +134,42 @@ scenario(Result) ->
                     agreement => disagree
                 },
                 #{kind => network, detail => {isolate, n3}},
+                #{
+                    kind => membership,
+                    detail => {join, n4},
+                    node => n4,
+                    members => [n1, n2, n3, n4],
+                    result => {joined, [n1, n2, n3]},
+                    ms => 120
+                },
                 #{kind => network, detail => heal},
                 #{kind => wait, ms => 15000, reason => settle},
                 #{kind => config, setting => lease_ms, value => 3000}
             ]
     }.
+
+run_with_failed_join() ->
+    maps:put(
+        scenarios,
+        [
+            #{
+                name => <<"node added">>,
+                module => scenario_node_added,
+                description => <<"A description long enough to be useful.">>,
+                log => [
+                    #{
+                        kind => membership,
+                        detail => {join, n4},
+                        node => n4,
+                        members => [n1, n2, n3],
+                        result => {error, <<"setup failed">>},
+                        ms => 40
+                    }
+                ]
+            }
+        ],
+        run()
+    ).
 
 owner(node1) -> #{node => 'workbench@node1', id => <<"aaaaaa">>};
 owner(node3) -> #{node => 'workbench@node3', id => <<"bbbbbb">>}.

@@ -7,6 +7,7 @@
     {setup, 1},
     {child_specs, 0},
     {on_cluster_ready, 1},
+    {teardown, 0},
     {settings, 0},
     {application, 0},
     {cleanup, 0},

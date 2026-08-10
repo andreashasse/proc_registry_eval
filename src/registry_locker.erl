@@ -17,6 +17,7 @@
 -behaviour(registry).
 
 -export([setup/1, child_specs/0, on_cluster_ready/1, settings/0, application/0]).
+-export([teardown/0]).
 -export([cleanup/0, frees_name_on_exit/0]).
 -export([claim/1, whereis_name/1, unregister_name/1, renew_lease/2]).
 
@@ -32,16 +33,25 @@ child_specs() ->
     [
         #{
             id => locker,
-            start => {locker, start_link, [quorum(workbench:peers())]}
+            start => {locker, start_link, [quorum(workbench:members())]}
         }
     ].
 
 %% Tell every node who the masters are and how many have to agree.
 %% Idempotent, so it does not matter that every node runs it.
+%%
+%% This is also what growing the cluster means for locker: a node added to
+%% it is a master nobody was counting, so the quorum has to be raised
+%% before the new node can take part in one.
 -spec on_cluster_ready([node()]) -> ok.
 on_cluster_ready(Peers) ->
     ok = locker:set_w(Peers, quorum(Peers)),
     ok = locker:set_nodes(Peers, Peers, []).
+
+-spec teardown() -> ok.
+teardown() ->
+    % locker is a child of workbench_sup, and its tables die with it
+    ok.
 
 %% Names disappear with the processes that hold them, which
 %% workbench_workers already stops.
@@ -97,7 +107,7 @@ renew_lease(Key, Pid) ->
 
 -spec settings() -> [{binary(), binary()}].
 settings() ->
-    Masters = workbench:peers(),
+    Masters = workbench:members(),
     [
         {<<"locker write quorum">>,
             fmt:format("~p of ~p masters", [quorum(Masters), length(Masters)])},

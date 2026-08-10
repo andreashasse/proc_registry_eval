@@ -10,8 +10,17 @@
 
 -define(RECONNECT_TIMEOUT_MS, 60_000).
 -define(CLEANUP_SETTLE_MS, 2000).
+%% A node being added connects to the members it can reach, gives up on
+%% the others, and then starts its registry, so it answers well before
+%% this.
+-define(JOIN_TIMEOUT_MS, 60_000).
+%% Leaving the cluster, and telling the members that it changed.
+-define(MEMBERSHIP_TIMEOUT_MS, 30_000).
 
 -type outcome() :: #{kind := atom(), _ => _}.
+%% The nodes that are in the cluster at a given point in a scenario. It
+%% starts as the nodes the run started with and grows with every `join'.
+-type members() :: [workbench:node_id()].
 
 %%%===================================================================
 %%% Entry point
@@ -31,11 +40,14 @@ main() ->
 -spec run() -> ok.
 run() ->
     Registry = workbench:registry(),
-    Nodes = workbench:peers(),
-    io:format("evaluating ~p on ~p~n", [Registry, Nodes]),
+    Nodes = workbench:members(),
+    io:format(
+        "evaluating ~p on ~p, joinable: ~p~n",
+        [Registry, Nodes, workbench:joiners()]
+    ),
     ok = await_cluster(Nodes),
     ok = multi(Nodes, registry, on_cluster_ready, [Nodes]),
-    Scenarios = [run_scenario(Module, Nodes) || Module <- scenario:all()],
+    Scenarios = [run_scenario(Module) || Module <- scenario:all()],
     results:write(Registry, #{
         registry => Registry,
         started_at => timestamp(),
@@ -47,12 +59,13 @@ run() ->
 %%% Scenarios
 %%%===================================================================
 
--spec run_scenario(module(), [node()]) -> map().
-run_scenario(Module, Nodes) ->
+-spec run_scenario(module()) -> map().
+run_scenario(Module) ->
     io:format("~n--- ~s~n", [Module:name()]),
-    ok = reset(Nodes),
-    Log = [execute(Step, Nodes) || Step <- Module:steps()],
-    ok = reset(Nodes),
+    Base = workbench:member_ids(),
+    ok = reset(Base),
+    {Log, Members} = lists:mapfoldl(fun execute/2, Base, Module:steps()),
+    ok = reset(Members),
     #{
         name => Module:name(),
         module => Module,
@@ -60,60 +73,113 @@ run_scenario(Module, Nodes) ->
         log => Log
     }.
 
-%% Back to a healthy cluster with no processes and default leases.
--spec reset([node()]) -> ok.
-reset(Nodes) ->
-    ok = multi(Nodes, netcut, unblock_all, []),
+%% Back to the cluster the run started with: the nodes a scenario added
+%% are removed again, cuts are lifted, and no processes or shortened
+%% leases are left behind.
+-spec reset(members()) -> ok.
+reset(Members) ->
+    Base = workbench:member_ids(),
+    ok = multi(workbench:peers(), netcut, unblock_all, []),
+    ok = part(Members -- Base),
+    Nodes = nodes_of(Base),
     ok = reconnect(Nodes),
     ok = multi(Nodes, workbench_workers, stop_all, []),
     ok = multi(Nodes, registry, cleanup, []),
     ok = multi(Nodes, workbench, reset_lease_ms, []),
+    ok = announce(Base),
     timer:sleep(?CLEANUP_SETTLE_MS),
     ok.
+
+%% Put the nodes a scenario added back outside the cluster. Best effort:
+%% a node whose registry did not survive being added still has to be
+%% cleared out of the way of the next scenario.
+-spec part(members()) -> ok.
+part([]) ->
+    ok;
+part(NodeIds) ->
+    _ = [
+        rpc:call(
+            workbench:node_of(NodeId),
+            workbench_cluster,
+            leave,
+            [],
+            ?MEMBERSHIP_TIMEOUT_MS
+        )
+     || NodeId <- NodeIds
+    ],
+    log("removed ~p from the cluster", [NodeIds]),
+    ok.
+
+%% Tell every member what the cluster looks like now.  Only registries
+%% that have to be configured with the membership, locker among these,
+%% care; for the rest it is a no-op. Best effort, because a scenario can
+%% add a node while the cluster is partitioned, and then a node cannot
+%% reach the ones it is being told about.
+-spec announce(members()) -> ok.
+announce(NodeIds) ->
+    Nodes = nodes_of(NodeIds),
+    _ = [
+        rpc:call(Node, workbench, set_members, [Nodes], ?MEMBERSHIP_TIMEOUT_MS)
+     || Node <- Nodes
+    ],
+    _ = [
+        rpc:call(Node, registry, on_cluster_ready, [Nodes], ?MEMBERSHIP_TIMEOUT_MS)
+     || Node <- Nodes
+    ],
+    ok.
+
+-spec nodes_of(members()) -> [node()].
+nodes_of(NodeIds) ->
+    [workbench:node_of(NodeId) || NodeId <- NodeIds].
 
 %%%===================================================================
 %%% Steps
 %%%===================================================================
 
--spec execute(scenario:step(), [node()]) -> outcome().
-execute({note, Text}, _Nodes) ->
-    #{kind => note, text => Text};
-execute({do, NodeId, Action, Key}, _Nodes) ->
+%% Every step is answered with what happened and the membership the next
+%% step runs against, which only `join' changes.
+-spec execute(scenario:step(), members()) -> {outcome(), members()}.
+execute({note, Text}, Members) ->
+    {#{kind => note, text => Text}, Members};
+execute({do, NodeId, Action, Key}, Members) ->
     {Result, Ms} = do_action(NodeId, Action, Key),
     log("~p ~p ~s -> ~p (~pms)", [NodeId, Action, Key, Result, Ms]),
-    #{
-        kind => action,
-        node => NodeId,
-        action => Action,
-        key => Key,
-        result => Result,
-        ms => Ms
+    {
+        #{
+            kind => action,
+            node => NodeId,
+            action => Action,
+            key => Key,
+            result => Result,
+            ms => Ms
+        },
+        Members
     };
-execute({do_all, Action, Key}, _Nodes) ->
-    Results = [
-        {NodeId, do_action(NodeId, Action, Key)}
-     || NodeId <- workbench:node_ids()
-    ],
+execute({do_all, Action, Key}, Members) ->
+    Results = [{NodeId, do_action(NodeId, Action, Key)} || NodeId <- Members],
     Agreement = agreement(Results),
     log("all ~p ~s -> ~p", [Action, Key, Agreement]),
-    #{
-        kind => action_all,
-        action => Action,
-        key => Key,
-        results => [{NodeId, Result, Ms} || {NodeId, {Result, Ms}} <- Results],
-        agreement => Agreement
+    {
+        #{
+            kind => action_all,
+            action => Action,
+            key => Key,
+            results => [{NodeId, Result, Ms} || {NodeId, {Result, Ms}} <- Results],
+            agreement => Agreement
+        },
+        Members
     };
-execute({cut, A, B}, _Nodes) ->
+execute({cut, A, B}, Members) ->
     ok = block(A, B),
     ok = block(B, A),
     log("cut ~p <-> ~p", [A, B]),
-    #{kind => network, detail => {cut, A, B}};
-execute({cut_one_way, A, B}, _Nodes) ->
+    {#{kind => network, detail => {cut, A, B}}, Members};
+execute({cut_one_way, A, B}, Members) ->
     ok = block(A, B),
     log("cut ~p <- ~p", [A, B]),
-    #{kind => network, detail => {cut_one_way, A, B}};
-execute({isolate, NodeId}, _Nodes) ->
-    Others = workbench:node_ids() -- [NodeId],
+    {#{kind => network, detail => {cut_one_way, A, B}}, Members};
+execute({isolate, NodeId}, Members) ->
+    Others = Members -- [NodeId],
     [
         begin
             ok = block(NodeId, Other),
@@ -122,26 +188,83 @@ execute({isolate, NodeId}, _Nodes) ->
      || Other <- Others
     ],
     log("isolate ~p", [NodeId]),
-    #{kind => network, detail => {isolate, NodeId}};
-execute({cut_db, NodeId}, _Nodes) ->
+    {#{kind => network, detail => {isolate, NodeId}}, Members};
+execute({cut_db, NodeId}, Members) ->
     ok = block(NodeId, workbench:database_host()),
     log("cut ~p <- postgres", [NodeId]),
-    #{kind => network, detail => {cut_db, NodeId}};
-execute(heal, Nodes) ->
-    ok = multi(Nodes, netcut, unblock_all, []),
-    ok = reconnect(Nodes),
+    {#{kind => network, detail => {cut_db, NodeId}}, Members};
+execute({join, NodeId}, Members) ->
+    Joined = Members ++ [NodeId],
+    {Result, Ms} = join(NodeId, Joined),
+    log("join ~p -> ~p (~pms)", [NodeId, Result, Ms]),
+    Next = joined_or_not(NodeId, Result, Members, Joined),
+    {
+        #{
+            kind => membership,
+            detail => {join, NodeId},
+            node => NodeId,
+            members => Next,
+            result => Result,
+            ms => Ms
+        },
+        Next
+    };
+execute(heal, Members) ->
+    ok = multi(workbench:peers(), netcut, unblock_all, []),
+    ok = reconnect(nodes_of(Members)),
     log("heal", []),
-    #{kind => network, detail => heal};
-execute(settle, _Nodes) ->
+    {#{kind => network, detail => heal}, Members};
+execute(settle, Members) ->
     Ms = workbench:settle_ms(),
     timer:sleep(Ms),
-    #{kind => wait, ms => Ms, reason => settle};
-execute({wait, Ms}, _Nodes) ->
+    {#{kind => wait, ms => Ms, reason => settle}, Members};
+execute({wait, Ms}, Members) ->
     timer:sleep(Ms),
-    #{kind => wait, ms => Ms, reason => explicit};
-execute({lease_ms, Ms}, Nodes) ->
-    ok = multi(Nodes, workbench, set_lease_ms, [Ms]),
-    #{kind => config, setting => lease_ms, value => Ms}.
+    {#{kind => wait, ms => Ms, reason => explicit}, Members};
+execute({lease_ms, Ms}, Members) ->
+    ok = multi(nodes_of(Members), workbench, set_lease_ms, [Ms]),
+    {#{kind => config, setting => lease_ms, value => Ms}, Members}.
+
+%% A node that could not start its registry did not join, so the cluster
+%% is left the size it was and the node is put back outside it. Otherwise
+%% the steps that follow would ask a node that is not there, the report
+%% would count its rpc errors against the registry, and it would say the
+%% cluster grew when it did not. The rollback is also what clears the node
+%% out of the way of the next scenario, because reset/1 only removes the
+%% nodes a scenario is recorded as having added.
+%%
+%% Reaching only some of the members is not a failure: that is what
+%% joining a partitioned cluster looks like.
+-spec joined_or_not(workbench:node_id(), term(), members(), members()) -> members().
+joined_or_not(_NodeId, {joined, _Reached}, _Members, Joined) ->
+    ok = announce(Joined),
+    Joined;
+joined_or_not(NodeId, _Failed, Members, _Joined) ->
+    ok = part([NodeId]),
+    Members.
+
+%% Add a node to the cluster.  What it answers is the ids of the members
+%% it reached, which is all of them unless the cluster is partitioned.
+-spec join(workbench:node_id(), members()) -> {term(), non_neg_integer()}.
+join(NodeId, Members) ->
+    Node = workbench:node_of(NodeId),
+    Started = erlang:monotonic_time(millisecond),
+    Reply = rpc:call(
+        Node, workbench_cluster, join, [nodes_of(Members)], ?JOIN_TIMEOUT_MS
+    ),
+    Elapsed = erlang:monotonic_time(millisecond) - Started,
+    {joined(Reply), Elapsed}.
+
+-spec joined(term()) -> term().
+joined({ok, Reached}) when is_list(Reached) ->
+    %% In cluster order rather than in the order they answered.
+    Ids = [workbench:id_of(Node) || Node <- Reached, is_atom(Node)],
+    {joined, [NodeId || NodeId <- workbench:node_ids(), lists:member(NodeId, Ids)]};
+joined({badrpc, Reason}) ->
+    {rpc_error, fmt:printable(Reason)};
+joined(Other) ->
+    %% Whatever a registry that could not be started answered with.
+    fmt:printable(Other).
 
 -spec do_action(workbench:node_id(), action:name(), workbench:key()) ->
     {action:result(), non_neg_integer()}.
@@ -185,9 +308,10 @@ resolve(NodeId) -> workbench:node_of(NodeId).
 -spec await_cluster([node()]) -> ok.
 await_cluster(Nodes) ->
     Deadline = erlang:monotonic_time(millisecond) + ?RECONNECT_TIMEOUT_MS,
-    await_cluster(Nodes, Deadline).
+    await(Nodes, Deadline, fun(_Nodes) -> ok end).
 
-await_cluster(Nodes, Deadline) ->
+-spec await([node()], integer(), fun(([node()]) -> ok)) -> ok.
+await(Nodes, Deadline, Retry) ->
     case [Node || Node <- Nodes, not booted(Node, Nodes)] of
         [] ->
             ok;
@@ -195,7 +319,8 @@ await_cluster(Nodes, Deadline) ->
             case erlang:monotonic_time(millisecond) < Deadline of
                 true ->
                     timer:sleep(1000),
-                    await_cluster(Nodes, Deadline);
+                    ok = Retry(Nodes),
+                    await(Nodes, Deadline, Retry);
                 false ->
                     error({cluster_not_ready, NotReady})
             end
@@ -216,13 +341,25 @@ sees_peers(Node, Nodes) ->
 %% Distributed Erlang only reconnects when something sends a message,
 %% so the workbench asks every node to reconnect after a heal. Otherwise
 %% the measurement would depend on which registry happens to poll.
+%%
+%% It keeps asking until the cluster is whole, because one round is not
+%% always enough: a node that leaves drops its connections one by one, and
+%% for as long as the others disagree about whether it is still there,
+%% `global' takes them for an overlapping partition and disconnects them
+%% from each other.
 -spec reconnect([node()]) -> ok.
 reconnect(Nodes) ->
-    [
+    Deadline = erlang:monotonic_time(millisecond) + ?RECONNECT_TIMEOUT_MS,
+    ok = connect_all(Nodes),
+    await(Nodes, Deadline, fun connect_all/1).
+
+-spec connect_all([node()]) -> ok.
+connect_all(Nodes) ->
+    _ = [
         rpc:call(Node, net_kernel, connect_node, [Peer], 10_000)
      || Node <- Nodes, Peer <- Nodes, Node =/= Peer
     ],
-    await_cluster(Nodes).
+    ok.
 
 -spec multi([node()], module(), atom(), [term()]) -> ok.
 multi(Nodes, Module, Function, Args) ->
@@ -289,7 +426,10 @@ registry_version(Node) ->
 
 -spec timestamp() -> binary().
 timestamp() ->
-    list_to_binary(
+    %% Through fmt, because `calendar:system_time_to_rfc3339/2' answers a
+    %% `calendar:rfc3339_string()', which is a string on OTP 27 and a
+    %% string or a binary on OTP 28.
+    fmt:text(
         calendar:system_time_to_rfc3339(
             erlang:system_time(second),
             [{offset, "Z"}]
