@@ -408,7 +408,9 @@ registry_version(Node) ->
 
 -spec timestamp() -> binary().
 timestamp() ->
-    list_to_binary(
+    %% Through fmt, because `calendar:rfc3339_string()' is a string on
+    %% OTP 27 and a string or a binary on OTP 28.
+    fmt:text(
         calendar:system_time_to_rfc3339(
             erlang:system_time(second),
             [{offset, "Z"}]

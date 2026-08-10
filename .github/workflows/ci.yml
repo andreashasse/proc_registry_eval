@@ -100,8 +100,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Runs the real thing: three containers, iptables partitions, every
-      # scenario. Two registries rather than all five, to keep CI short:
+      # Runs the real thing: five containers, iptables partitions, nodes
+      # added to the cluster, every scenario. Two registries rather than
+      # all seven, to keep CI short:
       # global for the BEAM path, highlander_pg for the Elixir and Postgres
       # one, which has the most that can break.
       - name: Run the workbench
