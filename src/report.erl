@@ -246,12 +246,19 @@ step_label(#{kind := action_all, action := Action, key := Key, agreement := Agre
 step_label(#{kind := network, detail := Detail}) ->
     network_label(Detail);
 step_label(#{kind := membership, detail := {join, NodeId}, members := Members}) ->
+    %% The membership is the one that held afterwards, so a node missing
+    %% from it is a node that did not manage to join.
+    {Verb, Rest} =
+        case lists:member(NodeId, Members) of
+            true -> {<<" joins the cluster** (now ">>, <<")">>};
+            false -> {<<" does not join the cluster** (still ">>, <<")">>}
+        end,
     [
         <<"**">>,
         fmt:text(NodeId),
-        <<" joins the cluster** (now ">>,
+        Verb,
         join([fmt:text(Member) || Member <- Members], <<", ">>),
-        <<")">>
+        Rest
     ];
 step_label(#{kind := wait, ms := Ms, reason := settle}) ->
     [<<"wait ">>, fmt:text(Ms), <<"ms for the registry to react">>];

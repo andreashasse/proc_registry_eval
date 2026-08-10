@@ -59,6 +59,16 @@ registries_become_columns_test() ->
     ?assert(contains(Markdown, <<"| Setting | syn | locker |">>)),
     ?assert(contains(Markdown, <<"| Question | syn | locker |">>)).
 
+%% A node that could not start its registry is not a bigger cluster, and
+%% the report has to say so rather than list it as a member.
+a_failed_join_did_not_grow_the_cluster_test() ->
+    Markdown = render([run_with_failed_join()]),
+    ?assert(
+        contains(Markdown, <<"**n4 does not join the cluster** (still n1, n2, n3)">>)
+    ),
+    ?assertNot(contains(Markdown, <<"joins the cluster">>)),
+    ?assert(contains(Markdown, <<"error: `setup failed`">>)).
+
 %%%===================================================================
 %%% Fixtures
 %%%===================================================================
@@ -126,6 +136,29 @@ scenario(Result) ->
                 #{kind => config, setting => lease_ms, value => 3000}
             ]
     }.
+
+run_with_failed_join() ->
+    maps:put(
+        scenarios,
+        [
+            #{
+                name => <<"node added">>,
+                module => scenario_node_added,
+                description => <<"A description long enough to be useful.">>,
+                log => [
+                    #{
+                        kind => membership,
+                        detail => {join, n4},
+                        node => n4,
+                        members => [n1, n2, n3],
+                        result => {error, <<"setup failed">>},
+                        ms => 40
+                    }
+                ]
+            }
+        ],
+        run()
+    ).
 
 owner(node1) -> #{node => 'workbench@node1', id => <<"aaaaaa">>};
 owner(node3) -> #{node => 'workbench@node3', id => <<"bbbbbb">>}.

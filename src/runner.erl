@@ -196,18 +196,18 @@ execute({cut_db, NodeId}, Members) ->
 execute({join, NodeId}, Members) ->
     Joined = Members ++ [NodeId],
     {Result, Ms} = join(NodeId, Joined),
-    ok = announce(Joined),
     log("join ~p -> ~p (~pms)", [NodeId, Result, Ms]),
+    Next = joined_or_not(NodeId, Result, Members, Joined),
     {
         #{
             kind => membership,
             detail => {join, NodeId},
             node => NodeId,
-            members => Joined,
+            members => Next,
             result => Result,
             ms => Ms
         },
-        Joined
+        Next
     };
 execute(heal, Members) ->
     ok = multi(workbench:peers(), netcut, unblock_all, []),
@@ -224,6 +224,24 @@ execute({wait, Ms}, Members) ->
 execute({lease_ms, Ms}, Members) ->
     ok = multi(nodes_of(Members), workbench, set_lease_ms, [Ms]),
     {#{kind => config, setting => lease_ms, value => Ms}, Members}.
+
+%% A node that could not start its registry did not join, so the cluster
+%% is left the size it was and the node is put back outside it. Otherwise
+%% the steps that follow would ask a node that is not there, the report
+%% would count its rpc errors against the registry, and it would say the
+%% cluster grew when it did not. The rollback is also what clears the node
+%% out of the way of the next scenario, because reset/1 only removes the
+%% nodes a scenario is recorded as having added.
+%%
+%% Reaching only some of the members is not a failure: that is what
+%% joining a partitioned cluster looks like.
+-spec joined_or_not(workbench:node_id(), term(), members(), members()) -> members().
+joined_or_not(_NodeId, {joined, _Reached}, _Members, Joined) ->
+    ok = announce(Joined),
+    Joined;
+joined_or_not(NodeId, _Failed, Members, _Joined) ->
+    ok = part([NodeId]),
+    Members.
 
 %% Add a node to the cluster.  What it answers is the ids of the members
 %% it reached, which is all of them unless the cluster is partitioned.
@@ -408,8 +426,9 @@ registry_version(Node) ->
 
 -spec timestamp() -> binary().
 timestamp() ->
-    %% Through fmt, because `calendar:rfc3339_string()' is a string on
-    %% OTP 27 and a string or a binary on OTP 28.
+    %% Through fmt, because `calendar:system_time_to_rfc3339/2' answers a
+    %% `calendar:rfc3339_string()', which is a string on OTP 27 and a
+    %% string or a binary on OTP 28.
     fmt:text(
         calendar:system_time_to_rfc3339(
             erlang:system_time(second),
